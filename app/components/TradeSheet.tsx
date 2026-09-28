@@ -264,7 +264,9 @@ export function TradeSheet({
   const amountText = amount.replace(/\.$/, "");
 
   useEffect(() => {
-    if (!valid || !wallet.address || overBalance || marketClosed) {
+    // Signed out, the sheet still quotes (quoteOnly): the fee, the impact and a
+    // tracker's band verdict are shown before anyone has a wallet.
+    if (!valid || overBalance || marketClosed) {
       setQuote(null);
       setQuoting(false);
       return;
@@ -277,7 +279,7 @@ export function TradeSheet({
       try {
         const built = await juno.buildSwap({
           curve: coin.pool,
-          trader: wallet.address!,
+          ...(wallet.address ? { trader: wallet.address } : { quoteOnly: true }),
           side,
           ...(exactOut ? { amountOut: amountText } : { amountIn: amountText }),
         });
@@ -374,6 +376,8 @@ export function TradeSheet({
         // slippage check is what actually protects the price.
         .catch(() => null);
       const live = fresh ?? quote;
+      // A visitor's quote (quoteOnly) has nothing to sign; only a rebuild does.
+      if (live.steps.length === 0) throw new Error("Could not build this trade. Try again.");
       if (fresh) {
         setQuote(fresh);
         quotedAt.current = Date.now();

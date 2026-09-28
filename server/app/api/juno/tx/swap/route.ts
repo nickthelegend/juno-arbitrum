@@ -10,8 +10,10 @@ export const OPTIONS = junoOptions;
 
 /**
  * Build a buy or a sell.
- * `POST { chainId, curve, trader, side, amountIn?, amountOut?, slippageBps? }`
+ * `POST { chainId, curve, trader, side, amountIn?, amountOut?, slippageBps?, quoteOnly? }`
  * (`curve` may also be the token, as `curve`, `token` or `mint`; `trader` may be `owner`).
+ * `quoteOnly: true` returns the quote with no steps and no balance checks, and
+ * needs no `trader`: what a visitor sees before signing in.
  *
  * The curve is looked up in Juno's own index rather than trusted from the
  * caller, so this server never builds a transaction against an arbitrary
@@ -23,7 +25,11 @@ export async function POST(request: Request) {
     const chainId = resolveChainId(body.chainId);
     requireDeployment(chainId);
     const address = normAddress(body.curve ?? body.token ?? body.mint, "curve");
-    const trader = normAddress(body.trader ?? body.owner, "trader");
+    const quoteOnly = body.quoteOnly === true;
+    const trader =
+      quoteOnly && body.trader === undefined && body.owner === undefined
+        ? "0x0000000000000000000000000000000000000000"
+        : normAddress(body.trader ?? body.owner, "trader");
     const side = body.side;
     if (side !== "buy" && side !== "sell") throw new CallerError('"side" must be "buy" or "sell"');
     if (side === "sell" && body.amountOut !== undefined) throw new CallerError("Exact-out is for buys only");
@@ -41,6 +47,7 @@ export async function POST(request: Request) {
         amountIn: body.amountIn,
         amountOut: body.amountOut,
         slippageBps: body.slippageBps,
+        quoteOnly,
       }),
     );
     return junoJson(build);

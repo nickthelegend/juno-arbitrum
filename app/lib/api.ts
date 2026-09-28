@@ -894,8 +894,11 @@ export const juno = {
   buildSwap: (
     input: {
       curve: string;
-      trader: string;
+      /** Omitted with `quoteOnly`: a visitor's quote, nothing to sign. */
+      trader?: string;
       side: "buy" | "sell";
+      /** Quote only: no balance checks and no steps (the server says why a trade would fail). */
+      quoteOnly?: boolean;
       /** What to spend. */
       amountIn?: string;
       /** Or, on a buy, exactly how many tokens to receive. */

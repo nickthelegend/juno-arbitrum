@@ -468,6 +468,13 @@ export type SwapRequest = {
   /** Exact-out buy: tokens to receive. */
   amountOut?: unknown;
   slippageBps?: unknown;
+  /**
+   * Quote without building: no balance checks, no steps. For visitors who have
+   * not signed in, so the sheet can show the fee, the impact and a tracker's
+   * band verdict before anyone has a wallet. The band and staleness checks
+   * still run, exactly as for a real buy.
+   */
+  quoteOnly?: boolean;
 };
 
 export type SwapQuote = {
@@ -549,8 +556,11 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
       minOut = minusSlippage(q.tokensOut, slip);
     }
 
+    const quoteOnly = request.quoteOnly === true;
     // Balances before anything is built: a doomed send costs the user gas.
-    if (isEth) {
+    if (quoteOnly) {
+      // nothing to check: no transaction is built
+    } else if (isEth) {
       await requireEth(chainId, trader, spend + GAS_RESERVE_WEI, "this buy");
     } else {
       const [usdcBalance] = await tokenBalances(chainId, [{ token: row.quote!, owner: trader }]);
@@ -566,7 +576,7 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
     }
 
     let approving = false;
-    if (!isEth) {
+    if (!isEth && !quoteOnly) {
       const current = await allowance(chainId, row.quote!, trader, curve);
       if (current < spend) {
         approving = true;
@@ -592,22 +602,24 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
 
     // With an approve still to send, the buy cannot be simulated yet: it
     // would fail on the allowance the first step is about to grant.
-    if (!approving) {
-      await simulate(chainId, { account: trader, address: curve, abi: CURVE_ABI, ...call });
-    }
-    steps.push(
-      await estimate(
-        chainId,
-        trader,
-        step(
-          "Buy",
-          curve,
-          encodeFunctionData({ abi: junoCurveAbi, functionName: call.functionName as "buy", args: call.args as never }),
-          call.value,
+    if (!quoteOnly) {
+      if (!approving) {
+        await simulate(chainId, { account: trader, address: curve, abi: CURVE_ABI, ...call });
+      }
+      steps.push(
+        await estimate(
+          chainId,
+          trader,
+          step(
+            "Buy",
+            curve,
+            encodeFunctionData({ abi: junoCurveAbi, functionName: call.functionName as "buy", args: call.args as never }),
+            call.value,
+          ),
+          approving ? { pendingApprove: { token: row.quote!, spender: curve, amount: spend } } : {},
         ),
-        approving ? { pendingApprove: { token: row.quote!, spender: curve, amount: spend } } : {},
-      ),
-    );
+      );
+    }
 
     const quoteIn = fmt(q.quoteIn, decimals);
     const tokensOut = fmt(q.tokensOut, 18);
@@ -633,7 +645,8 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
     };
   } else {
     const tokensIn = parseAmount(request.amountIn, 18, "amountIn");
-    const [held] = await tokenBalances(chainId, [{ token: row.token, owner: trader }]);
+    const quoteOnly = request.quoteOnly === true;
+    const [held] = quoteOnly ? [tokensIn] : await tokenBalances(chainId, [{ token: row.token, owner: trader }]);
     if (held === null) throw new Error("Token balance read failed");
     if (held < tokensIn) {
       throw new CallerError(`Not enough ${row.symbol}: you hold ${fmt(held, 18)}.`, 400, {
@@ -643,14 +656,16 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
       });
     }
     if (tokensIn > state.sold) throw new CallerError("That is more than the curve has sold.", 400);
-    await requireEth(chainId, trader, GAS_RESERVE_WEI, "gas");
+    if (!quoteOnly) await requireEth(chainId, trader, GAS_RESERVE_WEI, "gas");
 
     const q = await quoteSell(chainId, curve, tokensIn);
     if (q.quoteOut === 0n) throw new CallerError(revertMessage("ZeroAmount"), 400);
     const minOut = minusSlippage(q.quoteOut, slip);
     const args = [tokensIn, minOut, until] as const;
-    await simulate(chainId, { account: trader, address: curve, abi: CURVE_ABI, functionName: "sell", args });
-    steps.push(await estimate(chainId, trader, step("Sell", curve, encodeFunctionData({ abi: junoCurveAbi, functionName: "sell", args }))));
+    if (!quoteOnly) {
+      await simulate(chainId, { account: trader, address: curve, abi: CURVE_ABI, functionName: "sell", args });
+      steps.push(await estimate(chainId, trader, step("Sell", curve, encodeFunctionData({ abi: junoCurveAbi, functionName: "sell", args }))));
+    }
 
     const out = fmt(q.quoteOut, decimals);
     const size = fmt(tokensIn, 18);
@@ -675,7 +690,7 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
     };
   }
 
-  await requireFunds(chainId, trader, steps, side === "buy" ? "this buy" : "this sell");
+  if (request.quoteOnly !== true) await requireFunds(chainId, trader, steps, side === "buy" ? "this buy" : "this sell");
   return {
     chainId,
     steps,

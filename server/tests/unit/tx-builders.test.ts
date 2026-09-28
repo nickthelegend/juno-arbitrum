@@ -288,6 +288,38 @@ describe("buildSwap: buys", () => {
   });
 });
 
+describe("buildSwap: quoteOnly (visitors)", () => {
+  it("quotes a buy with no balance reads, no simulation and no steps", async () => {
+    mocks.quoteBuy.mockResolvedValue(buyQuote());
+    mocks.ethBalance.mockResolvedValue(0n);
+    const build = await buildSwap({ chainId: 421614, row: row(), trader: zeroAddress, side: "buy", amountIn: "0.01", quoteOnly: true });
+    expect(build.steps).toEqual([]);
+    expect(build.quote).toMatchObject({ side: "buy", amountOut: 400_000, fee: 0.0001 });
+    expect(mocks.ethBalance).not.toHaveBeenCalled();
+    expect(mocks.allowance).not.toHaveBeenCalled();
+    expect(mocks.simulateContract).not.toHaveBeenCalled();
+    expect(mocks.estimateGas).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a tracker buy outside the band, as the contract would", async () => {
+    const tracker = row({ feed: "0x3609baaa0a9b1f0fe4d6cc01884585d0e191c3e3", quote: USDC, quoteSymbol: "USDC", quoteDecimals: 6 });
+    mocks.readCurveState.mockResolvedValue(state({ quote: USDC, bandBps: 100 }));
+    mocks.quoteBuy.mockResolvedValue(buyQuote({ bandOk: false }));
+    const band = await rejection(buildSwap({ chainId: 421614, row: tracker, trader: zeroAddress, side: "buy", amountIn: "9500", quoteOnly: true }));
+    expect(band.extra.reason).toBe("OutsideBand");
+    expect(mocks.tokenBalances).not.toHaveBeenCalled();
+  });
+
+  it("quotes a sell without reading the holder's balance", async () => {
+    mocks.quoteSell.mockResolvedValue({ quoteOut: parseEther("0.001"), fee: parseEther("0.00001"), priceAfter: 19_000_000n });
+    const build = await buildSwap({ chainId: 421614, row: row(), trader: zeroAddress, side: "sell", amountIn: "100", quoteOnly: true });
+    expect(build.steps).toEqual([]);
+    expect(build.quote).toMatchObject({ side: "sell", amountOut: 0.001 });
+    expect(mocks.tokenBalances).not.toHaveBeenCalled();
+    expect(mocks.simulateContract).not.toHaveBeenCalled();
+  });
+});
+
 describe("buildSwap: sells", () => {
   it("builds sell(tokensIn, minOut, deadline) with no approve step", async () => {
     mocks.tokenBalances.mockResolvedValue([1_000n * E18]);

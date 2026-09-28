@@ -18,3 +18,4 @@ stylus/*/target/
 .juno/
 config/addresses.local.json
 .venv-slither/
+.vercel/

@@ -19,7 +19,7 @@ Built for **Arbitrum Open House Singapore** (online buildathon, Sep 14 – Oct 4
 |---|---|
 | **Try it** | Web app: see [Deployments](#deployments) · Android APK + iOS Simulator build in [Releases](https://github.com/nickthelegend/juno-arbitrum/releases) |
 | **Network** | Arbitrum Sepolia (test ETH — Profile → *Get test ETH*). Contracts also on Arbitrum One ([mainnet proof](#arbitrum-one-proof)). |
-| **API** | https://juno-arb-api-production.up.railway.app/api/health |
+| **API** | https://juno-arb-api.vercel.app/api/health |
 | **Docs** | [PLAN.md](PLAN.md) · [docs/API.md](docs/API.md) · [docs/SECURITY.md](docs/SECURITY.md) |
 
 ## What's Arbitrum-native here
@@ -53,7 +53,7 @@ Presets are fixed in the factory's constructor; nobody can change them.
 Expo app (iOS / Android / web) ── Privy embedded EVM wallet signs + sends
         │ REST (docs/API.md)
         ▼
-Next.js API (server/, Railway) ── viem ── Arbitrum Sepolia / One
+Next.js API (server/, Vercel) ── viem ── Arbitrum Sepolia / One
   builds calldata, quotes via curve views, indexes Launched/Trade/Claimed/Graduated
   ├── Postgres  juno_curves, juno_trades, posts, follows, watchlist
   ├── MongoDB   comments, likes, profiles (EIP-191 name claims), faucet claims
@@ -103,6 +103,7 @@ cd stylus/curve-math && cargo test --lib && cargo stylus check --endpoint $ARB_S
 bash scripts/deploy.sh                     # Arbitrum Sepolia
 # server
 cd server && npm i && npm run db:migrate && npm run dev
+bash scripts/deploy-api.sh                 # deploy the API to Vercel (env files never shipped)
 # app
 cd app && npm i && npx expo start
 ```

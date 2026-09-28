@@ -1,3 +1,4 @@
+import { catchUpAfter } from "@/lib/juno/catch-up";
 import { maybeAddress } from "@/lib/juno/address";
 import { activityFromSwap } from "@/lib/juno/activity";
 import { junoError, junoJson, junoOptions, junoRead } from "@/lib/juno/api";
@@ -16,6 +17,7 @@ import type { Coin } from "@/lib/juno/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 export const OPTIONS = junoOptions;
 
 /**
@@ -29,6 +31,7 @@ export async function GET(request: Request) {
   return junoRead(async () => {
     const url = new URL(request.url);
     const chainId = chainIdFromUrl(url);
+    catchUpAfter(chainId);
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 40) || 40, 80);
     const deployed = deployment(chainId) !== null;
 

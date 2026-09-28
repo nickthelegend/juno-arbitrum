@@ -14,7 +14,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://juno-arb-api-production.up.railway.app",
+        "EXPO_PUBLIC_API_URL": "https://juno-arb-api.vercel.app",
         "EXPO_PUBLIC_CHAIN_ID": "421614"
       },
       "android": {
@@ -27,7 +27,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://juno-arb-api-production.up.railway.app",
+        "EXPO_PUBLIC_API_URL": "https://juno-arb-api.vercel.app",
         "EXPO_PUBLIC_CHAIN_ID": "421614"
       }
     }

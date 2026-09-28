@@ -21,6 +21,11 @@ const nextConfig: NextConfig = {
     "pg",
     "mongodb",
   ],
+  // Never ship local env files: runtime secrets come from the host's
+  // environment (set with scripts/vercel-secrets.sh), not from the bundle.
+  outputFileTracingExcludes: {
+    "*": ["**/.env", "**/.env.*"],
+  },
   outputFileTracingIncludes: {
     "/api/juno/upload": [
       "./node_modules/@ffmpeg-installer/**",

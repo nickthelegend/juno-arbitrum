@@ -3,8 +3,8 @@
  *
  * - five `demo_` wallets, funded from the faucet key, each with a claimed
  *   (EIP-191 signed) name;
- * - six posts and reels launched from the Pexels footage already pinned for
- *   the Solana demo (metadata → tx/launch → send → tx/record);
+ * - six posts and reels launched from the Pexels footage already pinned to
+ *   IPFS (metadata → tx/launch → send → tx/record);
  * - three stock trackers (TSLA, NVDA, AAPL) against the Chainlink feeds, with
  *   the band defaults from `lib/juno/trackers.ts`;
  * - ~30 buys and sells across all of them, some with notes;
@@ -83,7 +83,7 @@ type PostPlan = {
   preset: "content" | "thin-name" | "ipo-book";
 };
 
-/** Free-licence Pexels footage and photos, pinned for the Solana demo. */
+/** Free-licence Pexels footage and photos, already pinned to IPFS. */
 const POSTS: PostPlan[] = [
   { key: "FALLS", creator: "demo_ana", name: "The Falls", symbol: "FALLS", description: "First light.", media: "ipfs://QmdPaKD9DuWJ9b2DSPoSQFLaBvKGPcpMs4Lq5XUVTPPd4t", mime: "image/jpeg", width: 3000, height: 2002, format: "post", preset: "content" },
   { key: "TIDE", creator: "demo_kai", name: "Last Light, Low Tide", symbol: "TIDE", description: "Dusk at the beach. One surfer still out.", media: "ipfs://QmdXCVRYkZnBDJuPW4KyAQgdbcBJuezY5aW3wsosYtkxhe", poster: "ipfs://QmUnwbLu1e8gqvqMjuytmcbKdjTAqn55az9ZUcmh1PdW8J", mime: "video/mp4", width: 720, height: 1280, format: "reel", preset: "content" },

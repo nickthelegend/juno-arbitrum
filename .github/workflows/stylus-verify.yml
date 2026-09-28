@@ -1,7 +1,7 @@
-# Reproducible check that the deployed Stylus CurveMath program was built from
-# this repo's source: `cargo stylus verify` rebuilds the crate in the pinned
-# Docker image and compares it with the code in the deployment transaction.
-# Runs on an x86 runner (the image is x86; Apple Silicon emulation crashes rustc).
+# Reproducibility check for the deployed Stylus CurveMath program: rebuild the
+# initcode from this repo with the pinned toolchain and compare it byte for
+# byte with the deployment transaction (scripts/stylus-match.sh). Fails on any
+# difference.
 name: stylus-verify
 on:
   workflow_dispatch:
@@ -12,12 +12,13 @@ on:
       rpc:
         description: RPC endpoint
         default: https://sepolia-rollup.arbitrum.io/rpc
+  push:
+    paths: ["stylus/**", "scripts/stylus-match.sh", ".github/workflows/stylus-verify.yml"]
 jobs:
-  verify:
+  match:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install --locked cargo-stylus --version 0.10.9
-      - working-directory: stylus/curve-math
-        run: cargo stylus verify --endpoint "${{ inputs.rpc }}" --deployment-tx "${{ inputs.deployment_tx }}"
+      - run: bash scripts/stylus-match.sh "${{ inputs.deployment_tx || '0x62ccef112150c59e5df0de6a7d987f4a81f4228279e5847ebf20138441f6ef3b' }}" "${{ inputs.rpc || 'https://sepolia-rollup.arbitrum.io/rpc' }}"

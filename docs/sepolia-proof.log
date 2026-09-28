@@ -15,3 +15,11 @@ in-band buy $500                   https://sepolia.arbiscan.io/tx/0x93b9a914378d
   $9,500 buy refused by the contract: OutsideBand(361672101, 357535000, 100)
 graduation skipped (SKIP_GRADUATION=1: not enough test ETH for a third launch + fill)
 
+# Juno smoke test, 2026-09-28T20:03:05.196Z
+deployer 0x39D73f1B3662A6120eBeafedE5762809bA8F53B9  trader 0x39D73f1B3662A6120eBeafedE5762809bA8F53B9
+launch tiny post (fill target)     https://sepolia.arbiscan.io/tx/0x09a12e2bc1613081729d6c67157052d7def9a544e9841e2b2412dfae1fcec4c6
+  filling costs 0.000075245379268307 ETH before fees
+buy the whole curve                https://sepolia.arbiscan.io/tx/0x26404071e2cb461fc62abefefd927696381e9da64ffcd41ef249e2fabeaae773
+graduate into Uniswap v3           https://sepolia.arbiscan.io/tx/0x69ba7eb82094c1eced559e4f66a5801061414b77877dfe36c86e44a920f7d4b9
+  pool 0x93fCeb86fd1Bc5aa85FE181b1560D7bfC1Bc02CA  position #3803  0.000075245379268303 WETH + 100333995.069407386368731446 GRAD, burned 699666004.930592613631268554
+

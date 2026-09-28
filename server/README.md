@@ -3,8 +3,7 @@
 The Next.js API behind the Juno app: an event indexer, hydration of coins from
 contract state and recorded trades, transaction builders the app sends through
 Privy, social features, media pinning and the Sepolia faucet. API-only — no
-pages. The HTTP contract is `../docs/API.md` plus the Solana-era shapes it
-keeps.
+pages. The HTTP contract is `../docs/API.md`.
 
 - **Chains:** Arbitrum Sepolia `421614` (the app's network) and Arbitrum One
   `42161` (read-only here; the mainnet proof is run by `../scripts`).
@@ -70,8 +69,7 @@ Optional: `DATABASE_URL_UNPOOLED` (migrations), `DATABASE_SSL`,
 Sepolia, 1.0 on One), `JUNO_INDEX_SECRET` (required header
 `x-juno-index-secret` on `POST /api/juno/index`), `JUNO_INDEX_INTERVAL_MS`
 (in-process indexer poll, e.g. `30000`), `JUNO_AUTO_GRADUATE=0` (turn off the
-server's graduate-after-fill), `CUSTODIAL_KEY_ENCRYPTION_SECRET` (kept for
-parity, unused). Test/dev only: `JUNO_LOCAL_ADDRESSES`, `JUNO_TEST_PRIVATE_KEY`,
+server's graduate-after-fill). Test/dev only: `JUNO_LOCAL_ADDRESSES`, `JUNO_TEST_PRIVATE_KEY`,
 `JUNO_API`, `DEPLOYER_PRIVATE_KEY` (demo `--funder deployer`, read from `../.env`).
 
 ## Routes
@@ -129,8 +127,8 @@ poster), `metadata` (pins `{ name, symbol, description, image, animation_url?,
 external_url, properties: { format, creator, mimeType, width, height } }`),
 `faucet` (POST `{ wallet }` → `{ eth, usdc }`; 0.02 ETH + 1,000 test USDC,
 Sepolia only; 1/wallet and 3/IP per 24h → 429 with `retryAfterSeconds`; 503
-below 0.03 ETH). Removed from the Solana API: `tessera`, `pools`, `tx/submit`
-(unknown `/api/*` paths answer a JSON 404).
+below 0.03 ETH).
+Unknown `/api/*` paths answer a JSON 404.
 
 ## How the pieces fit
 

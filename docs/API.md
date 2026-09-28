@@ -1,9 +1,9 @@
 # Juno on Arbitrum: server ↔ app contract
 
-The HTTP API keeps the Solana version's route names and response shapes
-(`/Volumes/Extreme SSD/Projects/zorr-solana/app/api/juno/**`,
-`juno-expo/lib/api.ts`). This file lists **only what changes**. Anything not
-listed here stays as it was, so the Expo app needs as few changes as possible.
+Every route lives under `/api/juno/` and answers JSON. This file lists the
+EVM-specific parts of the contract: chains, addresses, transaction builders,
+signatures and errors. Response shapes are defined by the route handlers in
+`server/app/api/juno/**` and consumed by `app/lib/api.ts`.
 
 ## Chains
 

@@ -69,15 +69,21 @@ const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 600);
 const self = process.env.SMOKE_SELF === "1";
 const skipGraduation = process.env.SKIP_GRADUATION === "1";
 const buyEth = process.env.BUY_ETH ?? "0.002";
+// GRAD_ONLY=1 runs only step 3; GRAD_P0 sets the tiny post's starting price in
+// wei per token (default 1e6: ~0.0028 ETH to fill; 3e4 fills for ~0.0001 ETH).
+const gradOnly = process.env.GRAD_ONLY === "1";
+const gradP0 = BigInt(process.env.GRAD_P0 ?? "1000000");
 const trader = self ? account : privateKeyToAccount(generatePrivateKey());
 const traderClient = self ? deployer : createWalletClient({ chain: deployer.chain, transport: http(chainFor(CHAIN).rpc), account: trader });
 note(`# Juno smoke test, ${new Date().toISOString()}${local ? " (local fork)" : ""}`);
 note(`deployer ${account.address}  trader ${trader.address}`);
 if (!self) await sent("fund trader 0.03 ETH", await deployer.sendTransaction({ to: trader.address, value: parseEther("0.03") }));
 
+let r: Awaited<ReturnType<typeof sent>>;
+if (!gradOnly) {
 // ---- 1. a post, priced in ETH
 const p0 = 20_000_000n; // 0.02 ETH initial market cap at 1B supply
-let r = await sent(
+r = await sent(
   "launch post (content, ETH)",
   await deployer.writeContract({
     address: factory,
@@ -142,6 +148,8 @@ try {
   note(`  $9,500 buy refused by the contract: ${detail}`);
 }
 
+}
+
 // ---- 3. fill a tiny post and graduate it into Uniswap v3
 if (skipGraduation) {
   note("graduation skipped (SKIP_GRADUATION=1: not enough test ETH for a third launch + fill)");
@@ -154,11 +162,11 @@ r = await sent(
     address: factory,
     abi: junoFactoryAbi,
     functionName: "launch",
-    args: [{ name: "Graduation Test", symbol: "GRAD", metadataURI: "ipfs://grad", preset: 0, quote: "0x0000000000000000000000000000000000000000", p0: 1_000_000n, capFp: 25n * 10n ** 18n }, 0n],
+    args: [{ name: "Graduation Test", symbol: "GRAD", metadataURI: "ipfs://grad", preset: 0, quote: "0x0000000000000000000000000000000000000000", p0: gradP0, capFp: 25n * 10n ** 18n }, 0n],
   }),
 );
 const tiny = launched(r);
-const full = await publicClient.readContract({ address: addresses.curveMath, abi: curveMathAbi, functionName: "costToBuy", args: [0, 1_000_000n, 25n * 10n ** 18n, tiny.curveSupply, 0n, tiny.curveSupply] });
+const full = await publicClient.readContract({ address: addresses.curveMath, abi: curveMathAbi, functionName: "costToBuy", args: [0, gradP0, 25n * 10n ** 18n, tiny.curveSupply, 0n, tiny.curveSupply] });
 const gross = (full * 10_000n) / 9_000n + 1_000_000n; // fee on top, change comes back
 note(`  filling costs ${formatEther(full)} ETH before fees`);
 await sent("buy the whole curve", await traderClient.writeContract({ address: tiny.curve, abi: junoCurveAbi, functionName: "buy", args: [0n, deadline()], value: gross }));

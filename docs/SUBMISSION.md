@@ -12,7 +12,7 @@ the public page).
 | Repo | https://github.com/nickthelegend/juno-arbitrum |
 | Live app | https://juno-arb-app.vercel.app (Arbitrum Sepolia) |
 | API | https://juno-arb-api.vercel.app/api/health |
-| Demo video | [YouTube unlisted link — shot list and build steps in docs/FILM.md] |
+| Demo video | https://github.com/nickthelegend/juno-arbitrum/releases/download/v0.1.0/juno-arbitrum-film-1080p.mp4 (upload to YouTube unlisted if the form wants a YouTube link) |
 | Pitch deck | [link — export the Slides artifact as PDF] |
 | Contracts (Sepolia) | Stylus CurveMath `0x5125c9E14B64aCd48Bf7116A93c9B66DF89A4F37` · JunoFactory `0xBc89E74A36a9EFf7B938211ea4B82650DA3BE87a` · JunoCurve impl `0x3a4A8c33D8a3BacA2B58d608107a6E1Aa2B9A9F1` (Solidity verified on Sourcify; Stylus rebuilt byte for byte) |
 | Contracts (Arbitrum One) | [after `CHAIN=one bash scripts/deploy.sh` + `npx tsx scripts/mainnet-proof.ts`] |

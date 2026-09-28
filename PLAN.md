@@ -21,7 +21,7 @@ release v1.1.0), referred to below as **the Solana repo**.
 | 5 App | DONE (web sign-in blocked on Privy origin) | tsc clean; web live (feed, stocks, tracker band card, graduated state verified in the browser, docs/qa/); iOS Simulator release build launches; APK built. Web sign-in blocked until `https://juno-arb-app.vercel.app` is an allowed origin in Privy |
 | 6 Demo data | BLOCKED — deployer holds 0.00007 test ETH, faucet 0 | `cd server && npm run demo` ran on the fork (5 wallets, 6 posts/reels, 3 trackers, 28 trades, 1 graduation); needs ~0.1 Arbitrum Sepolia ETH on the deployer or faucet. The Sepolia graduation (T6.2) is already done |
 | 7 Arbitrum One proof | USER ACTION | `CHAIN=one bash scripts/deploy.sh` then `npx tsx scripts/mainnet-proof.ts` (asks before each tx; ~0.01 ETH + 2 USDC) |
-| 8 Deliverables | PARTIAL | README (addresses, verification, ops), deck, GitHub release v0.1.0 (APK + iOS Simulator zip + SHA256SUMS), QA screenshots in docs/qa. Film tooling ported with Arbitrum narration and a shot list (docs/FILM.md); recording blocked on demo data + a Privy sign-in; captions need an ElevenLabs key |
+| 8 Deliverables | PARTIAL | README, deck, release v0.1.0 (APK, iOS Simulator zip, SHA256SUMS, **demo film 2:36**), QA screenshots. Film: live web app recorded at phone size + real proof-script output + Blockscout, local Kokoro voice with transcribed captions, the STOCKLANA music bed (docs/FILM.md). Not in the film yet: sign-in, posting, Arbitrum One (need test ETH / a Privy sign-in). Visitors now see quotes and the band verdict before signing in (tx/swap quoteOnly) |
 
 Changes from the plan made during execution:
 - API hosted on **Vercel** (user request), not Railway; indexing runs on read

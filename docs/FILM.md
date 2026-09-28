@@ -1,53 +1,47 @@
-# Demo film: shot list and build
+# Demo film
 
 The film keeps the STOCKLANA film's approved layout (dark stage, the phone
 alternating sides over a lime disc, typed titles, word-lit captions, music
-about 12 dB under the voice). The tooling is in `scripts/demo/`; the narration
-is `scripts/demo/vo.py` (`LINES`), the chapter cards `scripts/demo/build_hf.py`
-(`CHAPTERS`). Target length: about 3.7 minutes.
+about 12 dB under the voice). Everything on screen is real: the phone chapters
+are recordings of the live web app against Arbitrum Sepolia, the terminal
+chapters show the repo's proof scripts' actual output, and the browser chapter
+is the verified factory on Blockscout.
 
-## 1. Record (iOS Simulator, iPhone 17)
-
-Record each take with `xcrun simctl io booted recordVideo <file>.mp4`, then
-frame it with `bash scripts/demo/frame-video.sh`. Framed takes go in
-`.juno/video/full/`, bare simulator recordings in `.juno/video/raw/`.
-
-| Chapter | File | What to show |
+| Chapter | Kind | Shows |
 |---|---|---|
-| c01 | `raw/01-wallet-privy.mp4` | Profile → Continue with email → OTP → wallet appears → faucet → claim a name |
-| c02 | `02-feed-buy.mp4` | Feed → Buy on a demo post → amount → confirm → receipt with the Arbiscan link |
-| c03 | `03-reels.mp4` | Reels tab: swipe two reels, like one, open the buy dock |
-| c04 | `04-comments.mp4` | Comments sheet on a demo post: post a comment, count goes up |
-| c05 | `05-post-launch-log.mp4` | + → photo → name/ticker → curve shape → launch log receipts (IPFS, launch tx, curve, listed) |
-| c06 | `06-reel-launch-log.mp4` | + → video → same flow, then the reel in the swipe feed |
-| c07 | `07-creator-claim.mp4` | The creator's coin page → accrued fees → Claim → receipt |
-| c08 | `08-tracker-band.mp4` | Trade → Stocks → TSLA tracker → $500 buy confirms → large buy refused with the OutsideBand message |
-| c09 | `09-market-closed.mp4` | A tracker with a stale feed: "Market closed · sells only", buy disabled, a sell succeeds |
-| c10 | `10-graduated-uniswap.mp4` | A graduated coin page → "Trading on Uniswap" → the pool |
-| c11 | `11-stylus.mp4` | The Stylus CurveMath program on Arbiscan, then `scripts/stylus-match.sh` printing MATCH |
-| c12 | `12-arbitrum-one-proof.mp4` | The Arbitrum One factory, TSLA tracker and trades on Arbiscan (after `scripts/mainnet-proof.ts`) |
+| intro / problem | cards | the feed on a phone; the problem |
+| c01 Every post is a market | phone | the live feed |
+| c02 Creators get paid | phone | the SMOKE market: its buy, sell and claimed creator fees |
+| c03 Held to Chainlink | phone | the Stocks tab with the TSLA tracker |
+| c04 The band lives in the contract | phone | the band card; the sheet quoting $500 and refusing $9,500 |
+| c05 Refused by the contract | terminal | smoke test: in-band buy confirmed, `OutsideBand(361672101, 357535000, 100)` |
+| c06 Graduation to Uniswap v3 | phone | the graduated GRAD market, holders and details |
+| c07 Curve maths in Stylus | terminal | 720 calls Stylus == Solidity; `stylus-match.sh` MATCH |
+| c08 Verified, end to end | browser | the factory's exact-match verification |
 
-Stock trackers need an open market. Outside US market hours, run the
-`feeds` workflow with `force_open` before recording c08, and say on screen
-that the Sepolia feeds are mocks mirroring the real Arbitrum One prices.
-For c09, record on a weekend or wait 26 hours after the last feed update.
+Sign-in, posting and Arbitrum One are not in this cut: they need a Privy
+sign-in and test ETH for real footage. Add them as phone chapters when they
+can be recorded.
 
-## 2. Voice, music, captions
+## Build
 
 ```bash
-ELEVENLABS_API_KEY=… python3 scripts/demo/vo_eleven.py .juno/video/final/vo11
-ELEVENLABS_API_KEY=… python3 scripts/demo/music_eleven.py .juno/video/final/hf/assets/audio/music-bed.wav 240
+# 1. footage (Playwright + its chrome-headless-shell; the live app)
+node scripts/demo/record-web.mjs .juno/video/raw          # c01–c04, c06
+#    c08: a 1440x900 recording of the explorer page, saved as .juno/video/raw/08-explorer.mp4
+
+# 2. voice + word timings for the captions
+python3 scripts/demo/vo_local.py .juno/video/final/vo     # Kokoro + hyperframes transcribe, no key
+#    or, with a key: ELEVENLABS_API_KEY=… python3 scripts/demo/vo_eleven.py .juno/video/final/vo
+for f in .juno/video/final/vo/*.wav; do cp "$f" .juno/video/final/hf/assets/audio/vo-$(basename "$f"); done
+
+# 3. clips, composition, render, final mix
+python3 scripts/demo/clips.py .juno/video/final/hf .juno/video/final/vo
+python3 scripts/demo/build_hf.py .juno/video/final/hf .juno/video/final/vo
+(cd .juno/video/final/hf && npx hyperframes check && npx hyperframes render -o ../film-render.mp4)
+python3 scripts/demo/remix.py .juno/video/final/hf .juno/video/final/film-render.mp4 juno-arbitrum-film.mp4
 ```
 
-`vo_eleven.py` writes the per-word timings the captions use. Without a key,
-`python3 scripts/demo/vo.py .juno/video/final/vo` makes a local Kokoro voice
-(no captions).
-
-## 3. Build and render
-
-```bash
-python3 scripts/demo/clips.py .juno/video/final/hf .juno/video/final/vo11
-python3 scripts/demo/build_hf.py .juno/video/final/hf .juno/video/final/vo11
-npx hyperframes render .juno/video/final/hf
-python3 scripts/demo/remix.py .juno/video/final/hf film.mp4 juno-arbitrum.mp4
-```
+The HyperFrames project in `.juno/video/final/hf` also needs `fonts/`,
+`assets/phone-frame.png`, `assets/audio/music-bed.wav` (the ElevenLabs bed from
+the STOCKLANA film) and live stills (`hero-screen.png`, `card-*.png`).

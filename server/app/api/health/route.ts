@@ -1,7 +1,7 @@
 import { junoJson } from "@/lib/juno/api";
 import { getPgPool } from "@/lib/db/pool";
 import { deployment, publicClient, SUPPORTED_CHAINS, usingPublicRpc, appChainId } from "@/lib/juno/chains";
-import { faucetAccount } from "@/lib/juno/faucet";
+import { FAUCET_FLOOR, faucetAccount } from "@/lib/juno/faucet";
 import { readCursor } from "@/lib/juno/indexer";
 import { db } from "@/lib/juno/social";
 
@@ -42,7 +42,7 @@ export async function GET() {
     timed(async () => {
       const account = faucetAccount();
       const balance = await publicClient(421614).getBalance({ address: account.address });
-      return { address: account.address.toLowerCase(), balanceEth: Number(balance) / 1e18 };
+      return { address: account.address.toLowerCase(), balanceEth: Number(balance) / 1e18, funded: balance >= FAUCET_FLOOR };
     }),
   ]);
 
@@ -55,7 +55,10 @@ export async function GET() {
       postgres: { ok: postgres.ok, ms: postgres.ms, error: postgres.error },
       mongo: { ok: mongo.ok, ms: mongo.ms, error: mongo.error },
       chains,
-      faucet: faucet.ok ? { ok: true, ...faucet.value } : { ok: false, error: faucet.error },
+      // The faucet refuses to send below FAUCET_FLOOR, so an underfunded one is not ok.
+      faucet: faucet.ok
+        ? { ok: faucet.value!.funded, ...faucet.value, error: faucet.value!.funded ? undefined : `below ${Number(FAUCET_FLOOR) / 1e18} ETH; fund ${faucet.value!.address}` }
+        : { ok: false, error: faucet.error },
     },
     { status: ok ? 200 : 503 },
   );

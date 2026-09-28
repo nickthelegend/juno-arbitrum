@@ -10,8 +10,10 @@
 # --no-verify`), so `cargo stylus verify`, which rebuilds inside Docker, does
 # not apply to it; this native comparison does. The build is reproducible per
 # platform (macOS arm64 here; a Linux build lays the code out differently) and
-# embeds dependency source paths, so rebuild on macOS arm64 with CARGO_HOME at
-# /Users/jaibajrang/.cargo. CI (.github/workflows/stylus-verify.yml) does that.
+# embeds dependency source paths and a hash of the project's files that depends
+# on their location, so rebuild on macOS arm64 with CARGO_HOME at
+# /Users/jaibajrang/.cargo and the repo at /Volumes/Extreme SSD/Projects/juno-arbitrum.
+# CI (.github/workflows/stylus-verify.yml) recreates exactly that and matches.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TX="${1:-0x62ccef112150c59e5df0de6a7d987f4a81f4228279e5847ebf20138441f6ef3b}"

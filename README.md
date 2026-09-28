@@ -86,8 +86,10 @@ implementation are also verified on
 re-run with `bash scripts/verify.sh` (adds Arbiscan when `ARBISCAN_API_KEY` is
 set). The Stylus program is proven by rebuilding it: `bash scripts/stylus-match.sh`
 compiles `stylus/curve-math` with the pinned toolchain and compares the initcode
-byte for byte with the deployment transaction (also run in CI,
-[`stylus-verify`](.github/workflows/stylus-verify.yml)).
+byte for byte with the deployment transaction. CI reproduces the match on a
+fresh macOS arm64 runner ([`stylus-verify`](.github/workflows/stylus-verify.yml));
+the build is reproducible per platform and embeds its source and Cargo paths,
+which the workflow recreates.
 
 **Operations.** An indexer pass runs every 5 minutes
 ([`index`](.github/workflows/index.yml), authenticated with `JUNO_INDEX_SECRET`),

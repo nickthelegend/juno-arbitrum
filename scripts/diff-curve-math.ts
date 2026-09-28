@@ -5,14 +5,23 @@
  *
  *   tsx diff-curve-math.ts [runs=300]
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { curveMathAbi } from "../config/abi";
 import { clients } from "./lib";
 
 const runs = Number(process.argv[2] ?? 300);
 const { publicClient, addresses } = clients(421614);
-if (!addresses.curveMath || !addresses.curveMathRef) throw new Error("deploy CurveMath and CurveMathRef first");
+if (!addresses.curveMath) throw new Error("deploy CurveMath first");
 const stylus = addresses.curveMath;
-const ref = addresses.curveMathRef;
+// The Solidity reference is injected into each eth_call with a state
+// override (its runtime bytecode at a scratch address), so it never has to be
+// deployed. If a deployed copy is recorded, that is used instead.
+const artifact = JSON.parse(readFileSync(fileURLToPath(new URL("../contracts/out/CurveMathRef.sol/CurveMathRef.json", import.meta.url)), "utf8"));
+const ref = (addresses.curveMathRef ?? "0x00000000000000000000000000000000000c0ffe") as `0x${string}`;
+const overrideFor = (address: `0x${string}`) =>
+  address === ref && !addresses.curveMathRef ? [{ address: ref, code: artifact.deployedBytecode.object as `0x${string}` }] : undefined;
 
 const rand = (n: bigint) => BigInt(Math.floor(Math.random() * 2 ** 52)) % n;
 const E18 = 10n ** 18n;
@@ -20,7 +29,7 @@ const E18 = 10n ** 18n;
 async function both(fn: string, args: unknown[]) {
   const call = (address: `0x${string}`) =>
     publicClient
-      .readContract({ address, abi: curveMathAbi, functionName: fn as never, args: args as never })
+      .readContract({ address, abi: curveMathAbi, functionName: fn as never, args: args as never, stateOverride: overrideFor(address) } as never)
       .then((v) => ({ ok: true as const, v }))
       .catch((e) => ({ ok: false as const, v: e.shortMessage as string }));
   const [a, b] = await Promise.all([call(stylus), call(ref)]);

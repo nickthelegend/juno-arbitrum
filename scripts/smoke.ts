@@ -64,12 +64,16 @@ function launched(receipt: Awaited<ReturnType<typeof sent>>) {
 
 const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 600);
 
-// A fresh trader, funded by the deployer.
-const trader = privateKeyToAccount(generatePrivateKey());
-const traderClient = createWalletClient({ chain: deployer.chain, transport: http(chainFor(CHAIN).rpc), account: trader });
+// SMOKE_SELF=1: the deployer trades too (a thin test-ETH budget). Otherwise a
+// fresh trader is funded by the deployer.
+const self = process.env.SMOKE_SELF === "1";
+const skipGraduation = process.env.SKIP_GRADUATION === "1";
+const buyEth = process.env.BUY_ETH ?? "0.002";
+const trader = self ? account : privateKeyToAccount(generatePrivateKey());
+const traderClient = self ? deployer : createWalletClient({ chain: deployer.chain, transport: http(chainFor(CHAIN).rpc), account: trader });
 note(`# Juno smoke test, ${new Date().toISOString()}${local ? " (local fork)" : ""}`);
 note(`deployer ${account.address}  trader ${trader.address}`);
-await sent("fund trader 0.03 ETH", await deployer.sendTransaction({ to: trader.address, value: parseEther("0.03") }));
+if (!self) await sent("fund trader 0.03 ETH", await deployer.sendTransaction({ to: trader.address, value: parseEther("0.03") }));
 
 // ---- 1. a post, priced in ETH
 const p0 = 20_000_000n; // 0.02 ETH initial market cap at 1B supply
@@ -85,10 +89,10 @@ let r = await sent(
 const post = launched(r);
 note(`  curve ${post.curve}  token ${post.token}  pool ${post.pool}`);
 
-const q = await publicClient.readContract({ address: post.curve, abi: junoCurveAbi, functionName: "quoteBuy", args: [parseEther("0.002")] });
+const q = await publicClient.readContract({ address: post.curve, abi: junoCurveAbi, functionName: "quoteBuy", args: [parseEther(buyEth)] });
 await sent(
-  "buy 0.002 ETH",
-  await traderClient.writeContract({ address: post.curve, abi: junoCurveAbi, functionName: "buy", args: [(q.tokensOut * 99n) / 100n, deadline()], value: parseEther("0.002") }),
+  `buy ${buyEth} ETH`,
+  await traderClient.writeContract({ address: post.curve, abi: junoCurveAbi, functionName: "buy", args: [(q.tokensOut * 99n) / 100n, deadline()], value: parseEther(buyEth) }),
 );
 const half = q.tokensOut / 2n;
 const sq = await publicClient.readContract({ address: post.curve, abi: junoCurveAbi, functionName: "quoteSell", args: [half] });
@@ -139,6 +143,11 @@ try {
 }
 
 // ---- 3. fill a tiny post and graduate it into Uniswap v3
+if (skipGraduation) {
+  note("graduation skipped (SKIP_GRADUATION=1: not enough test ETH for a third launch + fill)");
+  if (!local) appendFileSync(log, lines.join("\n") + "\n\n");
+  process.exit(0);
+}
 r = await sent(
   "launch tiny post (fill target)",
   await deployer.writeContract({

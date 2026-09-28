@@ -17,7 +17,7 @@ Built for **Arbitrum Open House Singapore** (online buildathon, Sep 14 – Oct 4
 
 | | |
 |---|---|
-| **Try it** | Web app: see [Deployments](#deployments) · Android APK + iOS Simulator build in [Releases](https://github.com/nickthelegend/juno-arbitrum/releases) |
+| **Try it** | **https://juno-arb-app.vercel.app** · Android APK + iOS Simulator build in [Releases](https://github.com/nickthelegend/juno-arbitrum/releases) |
 | **Network** | Arbitrum Sepolia (test ETH — Profile → *Get test ETH*). Contracts also on Arbitrum One ([mainnet proof](#arbitrum-one-proof)). |
 | **API** | https://juno-arb-api.vercel.app/api/health |
 | **Docs** | [PLAN.md](PLAN.md) · [docs/API.md](docs/API.md) · [docs/SECURITY.md](docs/SECURITY.md) |
@@ -70,9 +70,10 @@ server read them from there).
 
 | | Arbitrum Sepolia (421614) | Arbitrum One (42161) |
 |---|---|---|
-| CurveMath (Stylus) | *pending deploy* | *pending deploy* |
-| JunoFactory | *pending deploy* | *pending deploy* |
-| Quote for trackers | Juno Test USDC (faucet-mintable) | Circle USDC `0xaf88…5831` |
+| CurveMath (Stylus) | [`0x5125…4f37`](https://sepolia.arbiscan.io/address/0x5125c9e14b64acd48bf7116a93c9b66df89a4f37) | *pending* |
+| JunoFactory | [`0xBc89…E87a`](https://sepolia.arbiscan.io/address/0xBc89E74A36a9EFf7B938211ea4B82650DA3BE87a) | *pending* |
+| Curve implementation | [`0x3a4A…A9F1`](https://sepolia.arbiscan.io/address/0x3a4A8c33D8a3BacA2B58d608107a6E1Aa2B9A9F1) | *pending* |
+| Quote for trackers | Juno Test USDC [`0x0afe…72ab`](https://sepolia.arbiscan.io/address/0x0afe4b5763813083D487B30215BDD21012c172ab) | Circle USDC `0xaf88…5831` |
 | Stock feeds | MockAggregators mirroring Arbitrum One | Chainlink `TSLA/USD 0x3609…C3E3`, `NVDA/USD 0x4881…262F`, `AAPL/USD 0x8d0C…557c` |
 | Uniswap v3 NonfungiblePositionManager | `0x6b29…4d65` | `0xC364…FE88` |
 
@@ -90,6 +91,8 @@ every transaction); results land in [`docs/mainnet-proof.log`](docs/mainnet-proo
 | Slither | no high-severity findings; triage in [docs/SECURITY.md](docs/SECURITY.md) |
 | Server (`server/`, Vitest) | 132 unit tests; 13 integration tests run end-to-end against an Arbitrum Sepolia fork |
 | App (`app/`) | `tsc` clean; web, iOS and Android bundles build |
+| **Live on Arbitrum Sepolia** ([docs/sepolia-proof.log](docs/sepolia-proof.log)) | launch → buy → sell → creator claim → TSLA tracker $500 in-band buy → $9,500 buy refused `OutsideBand(361.67, 357.54, 1%)` |
+| Stylus ≡ Solidity (`scripts/diff-curve-math.ts`) | the deployed Stylus program matched CurveMathRef on 720 calls over 120 random curves |
 | End-to-end on a Sepolia fork | launch → buy → sell (no approve) → creator claim → USDC tracker in-band buy → out-of-band buy refused `OutsideBand(365.30, 361.22, 1%)` → fill → graduate into Uniswap v3 |
 
 ## Run it

@@ -1,0 +1,17 @@
+# Juno smoke test, 2026-09-28T19:23:20.177Z
+deployer 0x39D73f1B3662A6120eBeafedE5762809bA8F53B9  trader 0x39D73f1B3662A6120eBeafedE5762809bA8F53B9
+launch post (content, ETH)         https://sepolia.arbiscan.io/tx/0x296cf5f878e7f046d3c91072ab09e763f409c904a3d4e0e0f1383ba67b0370ef
+  curve 0x7d4ceaA4E80AaA231f7B48d1Cf8A7E84E340557b  token 0x69F33cfA02073a1387DD25d0b45b25723ACd82cE  pool 0x7369B20B57382CAc66d507529b9135388be51d7e
+buy 0.00005 ETH                    https://sepolia.arbiscan.io/tx/0xffc4fdea103e470126b9ff5e6eca25711ea8be6558ff89f4c4fcb6988143c370
+sell half, no approve              https://sepolia.arbiscan.io/tx/0xbb6509109fcaf6185e249e78c41dc340e647b44da31050bcbff591e878c1360c
+creator claims 0.000003217584173736 ETH https://sepolia.arbiscan.io/tx/0xc847d3d856511d42aaaab445f640cf14163460d09691e8efc56d03fca9bfd8a5
+TSLA reference $357.535 (age 569s)
+launch TSLA tracker (USDC)         https://sepolia.arbiscan.io/tx/0xcbee770cbf67239957bdedd2ad748c0888788df809c70b13a5e0e0153c14fef2
+  curve 0x079fCF8Ebd2542884D0DDa3D75e410e97bA71d3c  token 0x8b884153da62882e9F4484C7408E4AB3124F3Fed
+trader mints 10,000 test USDC      https://sepolia.arbiscan.io/tx/0xda1949c3a47b41b9e7c0aa9b18412526075c3edb99cc5e2af77d1b648f7fca00
+approve USDC                       https://sepolia.arbiscan.io/tx/0x6c0115ce8b83e8d03dd2b1a39af849763ee8966e1a53c2f7dce7b4746a2c1bea
+  quote $500: 1.386691175109931315 jTSLA, band ok true, market open true
+in-band buy $500                   https://sepolia.arbiscan.io/tx/0x93b9a914378d4707fb78f07a1013126e5e2c2ab13e7ccf2741acd261654cf7d6
+  $9,500 buy refused by the contract: OutsideBand(361672101, 357535000, 100)
+graduation skipped (SKIP_GRADUATION=1: not enough test ETH for a third launch + fill)
+

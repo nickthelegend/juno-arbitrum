@@ -23,7 +23,7 @@ fi
 
 # 1. Stylus program
 cd "$ROOT/stylus/curve-math"
-OUT=$(cargo stylus deploy --endpoint "$RPC" --private-key "$DEPLOYER_PRIVATE_KEY" --no-verify 2>&1 | tee /dev/stderr)
+OUT=$(cargo stylus deploy --endpoint "$RPC" --private-key "$DEPLOYER_PRIVATE_KEY" --no-verify --max-fee-per-gas-gwei "${MAX_FEE_GWEI:-0.06}" 2>&1 | tee /dev/stderr)
 CURVE_MATH=$(echo "$OUT" | sed 's/\x1b\[[0-9;]*m//g' | grep -oE "deployed code at address:? *0x[0-9a-fA-F]{40}" | grep -oE "0x[0-9a-fA-F]{40}" | head -1)
 [ -n "$CURVE_MATH" ] || { echo "could not read the Stylus address"; exit 1; }
 echo "CurveMath (Stylus): $CURVE_MATH"
@@ -36,13 +36,14 @@ export SEED_AAPL=$(seed 0x8d0CC5f38f9E802475f2CFf4F9fc7000C2E1557c)
 cd "$ROOT/contracts"
 VERIFY=()
 if [ -n "${ARBISCAN_API_KEY:-}" ]; then VERIFY=(--verify); fi
-LOG=$(CURVE_MATH="$CURVE_MATH" forge script script/Deploy.s.sol --rpc-url "$NET" --broadcast --slow "${VERIFY[@]}" 2>&1 | tee /dev/stderr)
+LOG=$(CURVE_MATH="$CURVE_MATH" forge script script/Deploy.s.sol --rpc-url "$NET" --broadcast --slow ${VERIFY[@]+"${VERIFY[@]}"} 2>&1 | tee /dev/stderr)
 get() { echo "$LOG" | grep -E "^\s*$1 0x" | awk '{print $2}' | head -1; }
 FACTORY=$(get FACTORY)
-BLOCK=$(cast receipt "$(jq -r '.transactions[] | select(.contractName=="JunoFactory") | .hash' broadcast/Deploy.s.sol/$CHAIN_ID/run-latest.json)" blockNumber --rpc-url "$RPC")
+BLOCK=$(cast receipt "$(jq -r '.transactions[] | select(.contractName=="JunoFactory" and .transactionType=="CREATE") | .hash' broadcast/Deploy.s.sol/$CHAIN_ID/run-latest.json)" blockNumber --rpc-url "$RPC")
 ARGS=(factory="$FACTORY" curveImpl="$(get CURVE_IMPL)" curveMath="$CURVE_MATH" factoryBlock="$BLOCK")
 if [ "$CHAIN_ID" = "421614" ]; then
-  ARGS+=(usdc="$(get USDC)" curveMathRef="$(get CURVE_MATH_REF)" TSLA="$(get FEED_TSLA)" NVDA="$(get FEED_NVDA)" AAPL="$(get FEED_AAPL)")
+  ARGS+=(usdc="$(get USDC)" TSLA="$(get FEED_TSLA)" NVDA="$(get FEED_NVDA)" AAPL="$(get FEED_AAPL)")
+  REF="$(get CURVE_MATH_REF)"; [ -n "$REF" ] && ARGS+=(curveMathRef="$REF")
 fi
 
 # 4. Address book and ABI

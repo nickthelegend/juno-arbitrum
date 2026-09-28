@@ -59,7 +59,9 @@ contract Deploy is Script {
         factory.setFeed(address(nvda), true);
         factory.setFeed(address(aapl), true);
 
-        CurveMathRef ref = new CurveMathRef();
+        // The reference maths is only needed for the Stylus differential test,
+        // which can inject its bytecode into an eth_call; deploy it only if asked.
+        address ref = vm.envOr("DEPLOY_REF", false) ? address(new CurveMathRef()) : address(0);
 
         console.log("FACTORY", address(factory));
         console.log("CURVE_IMPL", factory.curveImpl());
@@ -67,7 +69,7 @@ contract Deploy is Script {
         console.log("FEED_TSLA", address(tsla));
         console.log("FEED_NVDA", address(nvda));
         console.log("FEED_AAPL", address(aapl));
-        console.log("CURVE_MATH_REF", address(ref));
+        if (ref != address(0)) console.log("CURVE_MATH_REF", ref);
     }
 
     function _one(address curveMath, address deployer, address treasury) internal {

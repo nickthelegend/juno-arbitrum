@@ -13,6 +13,15 @@ HOLD="$(mktemp -d)"
 trap '[ -f "$HOLD/.env.local" ] && mv "$HOLD/.env.local" server/.env.local' EXIT
 rm -rf .vercel/output
 vercel pull --yes --environment=production --scope "$SCOPE" >/dev/null
+# The API lives in server/ but imports ../config, so it is built from the repo
+# root with the Root Directory set to server/.
+python3 - <<'PY'
+import json
+p = ".vercel/project.json"
+d = json.load(open(p))
+d.setdefault("settings", {}).update({"rootDirectory": "server", "framework": "nextjs"})
+json.dump(d, open(p, "w"))
+PY
 vercel build --prod
 python3 - <<'PY'
 import glob, json, sys

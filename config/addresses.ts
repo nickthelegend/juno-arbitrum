@@ -29,18 +29,23 @@ export type ChainAddresses = {
 
 export const ADDRESSES: Record<number, ChainAddresses> = {
   421614: {
+    factoryBlock: 313703377,
     name: "Arbitrum Sepolia",
     explorer: "https://sepolia.arbiscan.io",
-    factory: null,
-    curveImpl: null,
-    curveMath: null,
-    usdc: null,
+    factory: "0xBc89E74A36a9EFf7B938211ea4B82650DA3BE87a",
+    curveImpl: "0x3a4A8c33D8a3BacA2B58d608107a6E1Aa2B9A9F1",
+    curveMath: "0x5125c9e14b64acd48bf7116a93c9b66df89a4f37",
+    usdc: "0x0afe4b5763813083D487B30215BDD21012c172ab",
     usdcIsTest: true,
     weth: "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73",
     uniswapV3Factory: "0x248AB79Bbb9bC29bB72f7Cd42F17e054Fc40188e",
     positionManager: "0x6b2937Bde17889EDCf8fbD8dE31C3C2a70Bc4d65",
     sequencerUptimeFeed: null,
-    feeds: {},
+    feeds: {
+      AAPL: "0xdcbAb4aECD0e58eCE023a4250B45D3a44209d340",
+      NVDA: "0x6eeA0940d91822b403E5DFE31bDa377997cc21f3",
+      TSLA: "0x293c9eDBB475150D5f1B93E1F9A303c61F4Ad685",
+    },
     feedsAreMocks: true,
   },
   42161: {

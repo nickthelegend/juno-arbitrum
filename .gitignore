@@ -19,3 +19,4 @@ stylus/*/target/
 config/addresses.local.json
 .venv-slither/
 .vercel/
+__pycache__/

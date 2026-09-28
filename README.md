@@ -17,10 +17,10 @@ Built for **Arbitrum Open House Singapore** (online buildathon, Sep 14 – Oct 4
 
 | | |
 |---|---|
-| **Try it** | **https://juno-arb-app.vercel.app** · Android APK + iOS Simulator build in [Releases](https://github.com/nickthelegend/juno-arbitrum/releases) |
+| **Try it** | **https://juno-arb-app.vercel.app** · Android APK + iOS Simulator build in [release v0.1.0](https://github.com/nickthelegend/juno-arbitrum/releases/tag/v0.1.0) |
 | **Network** | Arbitrum Sepolia (test ETH — Profile → *Get test ETH*). Contracts also on Arbitrum One ([mainnet proof](#arbitrum-one-proof)). |
 | **API** | https://juno-arb-api.vercel.app/api/health |
-| **Docs** | [PLAN.md](PLAN.md) · [docs/API.md](docs/API.md) · [docs/SECURITY.md](docs/SECURITY.md) |
+| **Docs** | [PLAN.md](PLAN.md) · [docs/API.md](docs/API.md) · [docs/SECURITY.md](docs/SECURITY.md) · [screenshots](docs/qa) |
 
 ## What's Arbitrum-native here
 
@@ -76,6 +76,24 @@ server read them from there).
 | Quote for trackers | Juno Test USDC [`0x0afe…72ab`](https://sepolia.arbiscan.io/address/0x0afe4b5763813083D487B30215BDD21012c172ab) | Circle USDC `0xaf88…5831` |
 | Stock feeds | MockAggregators mirroring Arbitrum One | Chainlink `TSLA/USD 0x3609…C3E3`, `NVDA/USD 0x4881…262F`, `AAPL/USD 0x8d0C…557c` |
 | Uniswap v3 NonfungiblePositionManager | `0x6b29…4d65` | `0xC364…FE88` |
+| Graduated example | `GRAD` → Uniswap v3 pool [`0x93fC…02CA`](https://sepolia.arbiscan.io/address/0x93fCeb86fd1Bc5aa85FE181b1560D7bfC1Bc02CA), position #3803 | — |
+
+**Source verification.** The Solidity contracts (factory, curve
+implementation, every launched token, test USDC, mock feeds) are verified on
+[Sourcify](https://sourcify.dev) with exact matches; the factory and curve
+implementation are also verified on
+[Blockscout](https://arbitrum-sepolia.blockscout.com/address/0xBc89E74A36a9EFf7B938211ea4B82650DA3BE87a);
+re-run with `bash scripts/verify.sh` (adds Arbiscan when `ARBISCAN_API_KEY` is
+set). The Stylus program is proven by rebuilding it: `bash scripts/stylus-match.sh`
+compiles `stylus/curve-math` with the pinned toolchain and compares the initcode
+byte for byte with the deployment transaction (also run in CI,
+[`stylus-verify`](.github/workflows/stylus-verify.yml)).
+
+**Operations.** An indexer pass runs every 5 minutes
+([`index`](.github/workflows/index.yml), authenticated with `JUNO_INDEX_SECRET`),
+and the Sepolia mock feeds follow the real Arbitrum One feeds every 30 minutes
+in US market hours ([`feeds`](.github/workflows/feeds.yml)), signed by a keeper
+key that owns only the three mocks.
 
 ### Arbitrum One proof
 Run by the deployer with `npx tsx scripts/mainnet-proof.ts` (it asks before
@@ -91,8 +109,9 @@ every transaction); results land in [`docs/mainnet-proof.log`](docs/mainnet-proo
 | Slither | no high-severity findings; triage in [docs/SECURITY.md](docs/SECURITY.md) |
 | Server (`server/`, Vitest) | 132 unit tests; 13 integration tests run end-to-end against an Arbitrum Sepolia fork |
 | App (`app/`) | `tsc` clean; web, iOS and Android bundles build |
-| **Live on Arbitrum Sepolia** ([docs/sepolia-proof.log](docs/sepolia-proof.log)) | launch → buy → sell → creator claim → TSLA tracker $500 in-band buy → $9,500 buy refused `OutsideBand(361.67, 357.54, 1%)` |
+| **Live on Arbitrum Sepolia** ([docs/sepolia-proof.log](docs/sepolia-proof.log)) | launch → buy → sell → creator claim → TSLA tracker $500 in-band buy → $9,500 buy refused `OutsideBand(361.67, 357.54, 1%)` → a post filled and graduated into Uniswap v3 (pool `0x93fC…02CA`, position #3803) |
 | Stylus ≡ Solidity (`scripts/diff-curve-math.ts`) | the deployed Stylus program matched CurveMathRef on 720 calls over 120 random curves |
+| Stylus reproducibility (`scripts/stylus-match.sh`) | rebuilt initcode is byte-identical to the deployment transaction (20,519 bytes) |
 | End-to-end on a Sepolia fork | launch → buy → sell (no approve) → creator claim → USDC tracker in-band buy → out-of-band buy refused `OutsideBand(365.30, 361.22, 1%)` → fill → graduate into Uniswap v3 |
 
 ## Run it
@@ -102,8 +121,9 @@ every transaction); results land in [`docs/mainnet-proof.log`](docs/mainnet-proo
 cd contracts && forge test                 # needs ARB_ONE_RPC for the fork
 # stylus
 cd stylus/curve-math && cargo test --lib && cargo stylus check --endpoint $ARB_SEPOLIA_RPC
-# deploy (Stylus + Foundry + address book)
+# deploy (Stylus + Foundry + address book), then verify
 bash scripts/deploy.sh                     # Arbitrum Sepolia
+bash scripts/verify.sh && bash scripts/stylus-match.sh <deployment-tx>
 # server
 cd server && npm i && npm run db:migrate && npm run dev
 bash scripts/deploy-api.sh                 # deploy the API to Vercel (env files never shipped)

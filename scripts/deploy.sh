@@ -51,9 +51,13 @@ cd "$ROOT/scripts"
 npx tsx write-addresses.ts "$CHAIN_ID" "${ARGS[@]}"
 node "$ROOT/scripts/gen-abi.mjs"
 
-# Stylus source verification (reproducible build in Docker)
-if [ -n "${SKIP_STYLUS_VERIFY:-}" ]; then echo "skipping cargo stylus verify"; else
+# Source verification: Solidity on Sourcify + Blockscout (+ Arbiscan with a
+# key); the Stylus program by rebuilding its initcode and comparing it byte for
+# byte with the deployment tx (the deploy is a native --no-verify build, so the
+# Docker-based `cargo stylus verify` cannot match it).
+if [ -n "${SKIP_VERIFY:-}" ]; then echo "skipping verification"; else
+  CHAIN="${CHAIN:-sepolia}" bash "$ROOT/scripts/verify.sh" || echo "verify.sh failed (non-fatal)"
   DEPLOY_TX=$(echo "$OUT" | sed 's/\x1b\[[0-9;]*m//g' | grep -oiE "deployment tx hash:? *0x[0-9a-f]{64}" | grep -oE "0x[0-9a-f]{64}" | head -1)
-  if [ -n "$DEPLOY_TX" ]; then (cd "$ROOT/stylus/curve-math" && cargo stylus verify --endpoint "$RPC" --deployment-tx "$DEPLOY_TX") || echo "stylus verify failed (non-fatal)"; fi
+  if [ -n "$DEPLOY_TX" ]; then bash "$ROOT/scripts/stylus-match.sh" "$DEPLOY_TX" "$RPC" || echo "stylus-match failed (non-fatal)"; echo "Stylus deployment tx: $DEPLOY_TX"; fi
 fi
 echo "Done. Factory $FACTORY at block $BLOCK"

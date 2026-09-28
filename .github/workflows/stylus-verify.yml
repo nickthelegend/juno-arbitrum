@@ -3,9 +3,11 @@
 # byte with the deployment transaction (scripts/stylus-match.sh). Fails on any
 # difference.
 #
-# The WASM embeds dependency source paths in its panic locations, so the
-# rebuild uses the same CARGO_HOME path as the machine that deployed it
-# (/Users/jaibajrang/.cargo). Nothing else about the host matters.
+# The build is reproducible per platform: the Sepolia program was built on
+# macOS arm64, and a Linux build of the same source with the same rustc lays
+# the code out differently. The WASM also embeds dependency source paths in
+# its panic locations. So this runs on a macOS arm64 runner with the deploying
+# machine's CARGO_HOME path (/Users/jaibajrang/.cargo).
 name: stylus-verify
 on:
   workflow_dispatch:
@@ -20,13 +22,14 @@ on:
     paths: ["stylus/**", "scripts/stylus-match.sh", ".github/workflows/stylus-verify.yml"]
 jobs:
   match:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     env:
       CARGO_HOME: /Users/jaibajrang/.cargo
     steps:
       - uses: actions/checkout@v4
       - run: |
           sudo mkdir -p /Users/jaibajrang && sudo chown "$USER" /Users/jaibajrang
+          [ -d ~/.cargo ] || curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           cp -r ~/.cargo "$CARGO_HOME"
           echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
       - run: |

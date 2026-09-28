@@ -15,7 +15,8 @@
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "db:create": "tsx --env-file=.env.local scripts/create-db.ts",
     "mongo:indexes": "tsx --env-file=.env.local scripts/mongo-indexes.ts",
-    "index": "tsx --env-file=.env.local --conditions=react-server scripts/run-indexer.ts"
+    "index": "tsx --env-file=.env.local --conditions=react-server scripts/run-indexer.ts",
+    "demo": "tsx --env-file=.env.local --env-file=../.env --conditions=react-server scripts/demo-activity.ts"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

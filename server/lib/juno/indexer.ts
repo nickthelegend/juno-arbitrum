@@ -61,6 +61,8 @@ export type IndexReport = {
   claims: number;
   graduations: number;
   metadataRefreshed: number;
+  /** Rows actually written this run (the counts above include re-scanned events). */
+  newRows: number;
   done: boolean;
 };
 
@@ -105,11 +107,11 @@ async function tokenIdentity(chainId: ChainId, token: string): Promise<{ name: s
   return { name, symbol: symbol.slice(0, 32) };
 }
 
-/** Insert a curve from its `Launched` event. Name/symbol from the token; media from its metadata. */
-export async function recordLaunch(chainId: ChainId, event: Located<LaunchedEvent>): Promise<void> {
+/** Insert a curve from its `Launched` event. Name/symbol from the token; media from its metadata. True when new. */
+export async function recordLaunch(chainId: ChainId, event: Located<LaunchedEvent>): Promise<boolean> {
   const db = getDb();
   const existing = await db.select({ token: junoCurves.token }).from(junoCurves).where(eq(junoCurves.token, event.token)).limit(1);
-  if (existing.length > 0) return;
+  if (existing.length > 0) return false;
 
   const [at, quote, identity, rawMetadata] = await Promise.all([
     blockTime(chainId, event.blockNumber),
@@ -119,7 +121,7 @@ export async function recordLaunch(chainId: ChainId, event: Located<LaunchedEven
   ]);
   const metadata = rawMetadata ? parseMetadata(rawMetadata) : null;
 
-  await db
+  const inserted = await db
     .insert(junoCurves)
     .values({
       ...curveRowFromLaunch(event, {
@@ -140,7 +142,9 @@ export async function recordLaunch(chainId: ChainId, event: Located<LaunchedEven
       mediaHeight: metadata?.mediaHeight ?? null,
       metadataFetched: rawMetadata !== null,
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ token: junoCurves.token });
+  return inserted.length > 0;
 }
 
 /**
@@ -151,9 +155,12 @@ export async function recordCurveEvents(
   chainId: ChainId,
   events: Array<Located<JunoEvent>>,
   curves: Map<string, Pick<CurveRow, "token">>,
-): Promise<{ trades: number; claims: number; graduations: number }> {
+): Promise<{ trades: number; claims: number; graduations: number; inserted: number }> {
   const db = getDb();
-  const counts = { trades: 0, claims: 0, graduations: 0 };
+  const counts = { trades: 0, claims: 0, graduations: 0, inserted: 0 };
+  const written = (rows: unknown[]) => {
+    counts.inserted += rows.length;
+  };
   const touched = new Set<string>();
 
   for (const event of events) {
@@ -164,13 +171,15 @@ export async function recordCurveEvents(
     touched.add(event.curve);
 
     if (event.kind === "trade") {
-      await db.insert(junoTrades).values(tradeRow(event, row.token, at, chainId)).onConflictDoNothing();
+      written(await db.insert(junoTrades).values(tradeRow(event, row.token, at, chainId)).onConflictDoNothing().returning({ n: junoTrades.logIndex }));
       counts.trades += 1;
     } else if (event.kind === "creatorClaim" || event.kind === "lpFees") {
-      await db.insert(junoClaims).values(claimRow(event, row.token, at, chainId)).onConflictDoNothing();
+      written(await db.insert(junoClaims).values(claimRow(event, row.token, at, chainId)).onConflictDoNothing().returning({ n: junoClaims.logIndex }));
       counts.claims += 1;
     } else if (event.kind === "graduated") {
-      await db.insert(junoGraduations).values(graduationRow(event, row.token, at, chainId)).onConflictDoNothing();
+      written(
+        await db.insert(junoGraduations).values(graduationRow(event, row.token, at, chainId)).onConflictDoNothing().returning({ n: junoGraduations.logIndex }),
+      );
       counts.graduations += 1;
     }
   }
@@ -216,17 +225,24 @@ export async function recordLogs(
   factory: string,
   logs: Log[],
   curves: Map<string, Pick<CurveRow, "token">>,
-): Promise<{ launched: Array<{ token: string; curve: string }>; trades: number; claims: number; graduations: number }> {
+): Promise<{
+  launched: Array<{ token: string; curve: string }>;
+  trades: number;
+  claims: number;
+  graduations: number;
+  inserted: number;
+}> {
   const events = decodeJunoLogs(logs, { factory, curves: curves.keys() });
   const launched: Array<{ token: string; curve: string }> = [];
+  let newLaunches = 0;
   for (const event of events) {
     if (event.kind !== "launched") continue;
-    await recordLaunch(chainId, event);
+    if (await recordLaunch(chainId, event)) newLaunches += 1;
     curves.set(event.curve, { token: event.token });
     launched.push({ token: event.token, curve: event.curve });
   }
   const counts = await recordCurveEvents(chainId, events, curves);
-  return { launched, ...counts };
+  return { launched, ...counts, inserted: counts.inserted + newLaunches };
 }
 
 /* ------------------------------------------------------------------ */
@@ -338,6 +354,7 @@ async function indexOnce(chainId: ChainId, options: { maxBatches?: number }): Pr
     claims: 0,
     graduations: 0,
     metadataRefreshed: 0,
+    newRows: 0,
     done: false,
   };
 
@@ -364,6 +381,7 @@ async function indexOnce(chainId: ChainId, options: { maxBatches?: number }): Pr
     report.trades += written.trades;
     report.claims += written.claims;
     report.graduations += written.graduations;
+    report.newRows += written.inserted;
     report.batches += 1;
     report.to = to;
     await writeCursor(chainId, to);

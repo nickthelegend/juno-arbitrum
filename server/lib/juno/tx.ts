@@ -306,6 +306,29 @@ async function requireEth(chainId: ChainId, owner: string, needed: bigint, what:
   }
 }
 
+/**
+ * The last check before a build is returned: the wallet can pay every step's
+ * value plus its gas at today's max fee. A launch is ~6M gas (it deploys a
+ * token and creates the Uniswap pool), which a flat reserve understates.
+ */
+export async function requireFunds(chainId: ChainId, owner: string, steps: TxStep[], what: string): Promise<void> {
+  const fees = await publicClient(chainId)
+    .estimateFeesPerGas()
+    .catch(() => null);
+  const maxFee = fees?.maxFeePerGas ?? 0n;
+  const gasCost = steps.reduce((sum, item) => sum + BigInt(item.gas) * maxFee, 0n);
+  const value = steps.reduce((sum, item) => sum + BigInt(item.value), 0n);
+  const needed = value + (gasCost > GAS_RESERVE_WEI ? gasCost : GAS_RESERVE_WEI);
+  const balance = await ethBalance(chainId, owner);
+  if (balance < needed) {
+    throw new CallerError(
+      `Not enough ETH: you have ${fmt(balance, 18)} ETH and ${what} needs about ${fmt(needed, 18)} ETH including gas.`,
+      400,
+      { reason: "InsufficientFunds", balance: fmt(balance, 18), needed: fmt(needed, 18) },
+    );
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Launch                                                              */
 /* ------------------------------------------------------------------ */
@@ -412,9 +435,11 @@ export async function buildLaunch(request: LaunchRequest): Promise<TxBuild<Launc
   })) as readonly [string, string] | undefined;
 
   const data = encodeFunctionData({ abi: junoFactoryAbi, functionName: "launch", args });
+  const steps = [await estimate(request.chainId, request.creator, step(initialBuy > 0n ? "Launch and buy" : "Launch", factory, data, initialBuy))];
+  await requireFunds(request.chainId, request.creator, steps, "this launch");
   return {
     chainId: request.chainId,
-    steps: [await estimate(request.chainId, request.creator, step(initialBuy > 0n ? "Launch and buy" : "Launch", factory, data, initialBuy))],
+    steps,
     quote: {
       preset: request.preset,
       presetIndex: preset.index,
@@ -650,6 +675,7 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
     };
   }
 
+  await requireFunds(chainId, trader, steps, side === "buy" ? "this buy" : "this sell");
   return {
     chainId,
     steps,

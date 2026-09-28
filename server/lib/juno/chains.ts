@@ -47,9 +47,10 @@ function localAddresses(): Record<string, Partial<ChainAddresses>> | null {
   if (process.env.JUNO_LOCAL_ADDRESSES !== "1") return null;
   if (localBook !== undefined) return localBook;
   const file =
-    process.env.JUNO_LOCAL_ADDRESSES_PATH ?? path.join(process.cwd(), "..", "config", "addresses.local.json");
+    process.env.JUNO_LOCAL_ADDRESSES_PATH ??
+    path.join(/*turbopackIgnore: true*/ process.cwd(), "..", "config", "addresses.local.json");
   try {
-    localBook = JSON.parse(readFileSync(file, "utf8")) as Record<string, Partial<ChainAddresses>>;
+    localBook = JSON.parse(readFileSync(/*turbopackIgnore: true*/ file, "utf8")) as Record<string, Partial<ChainAddresses>>;
   } catch (error) {
     console.warn("[juno] JUNO_LOCAL_ADDRESSES=1 but", file, "could not be read:", (error as Error).message);
     localBook = null;

@@ -43,7 +43,11 @@ vi.mock("@/lib/juno/chains", async (importOriginal) => {
   return {
     ...actual,
     requireDeployment: () => ({ chainId: 421614, factory: FACTORY, curveMath: null, usdc: USDC, weth: zeroAddress, feeds: {} }),
-    publicClient: () => ({ simulateContract: mocks.simulateContract, estimateGas: mocks.estimateGas }),
+    publicClient: () => ({
+      simulateContract: mocks.simulateContract,
+      estimateGas: mocks.estimateGas,
+      estimateFeesPerGas: async () => ({ maxFeePerGas: 100_000_000n, maxPriorityFeePerGas: 0n }),
+    }),
   };
 });
 
@@ -347,6 +351,26 @@ describe("buildLaunch", () => {
     });
     expect(minOut).toBe(0n);
     expect(build.quote).toMatchObject({ predictedCurve: CURVE, predictedToken: TOKEN, initialMarketCapEth: 0.02 });
+  });
+
+  it("counts a launch's gas, not just a flat reserve, against the balance", async () => {
+    // 6.3M gas at 0.1 gwei is 0.00063 ETH: more than the 0.0005 reserve.
+    mocks.estimateGas.mockResolvedValue(6_300_000n);
+    mocks.ethBalance.mockResolvedValue(parseEther("0.0011"));
+    const error = await rejection(
+      buildLaunch({
+        chainId: 421614,
+        creator: CREATOR,
+        name: "Sunset",
+        symbol: "SUN",
+        metadataUri: "ipfs://bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy",
+        format: "post",
+        preset: "content",
+        initialBuy: parseEther("0.0003"),
+      }),
+    );
+    expect(error.message).toMatch(/Not enough ETH/);
+    expect(error.extra.needed).toBeCloseTo(0.0003 + 8_190_000 * 1e-10, 10);
   });
 
   it("refuses trackers, bad symbols and unpinned metadata", async () => {

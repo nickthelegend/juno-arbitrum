@@ -56,7 +56,8 @@ const routes = {
 };
 
 const url = (path: string) => `http://juno.test${path}`;
-async function get(handler: (r: Request, c?: never) => Promise<Response>, path: string, params?: Record<string, string>) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function get(handler: (r: Request, c: any) => Promise<Response>, path: string, params?: Record<string, string>) {
   const response = await handler(new Request(url(path)), (params ? { params: Promise.resolve(params) } : undefined) as never);
   return { status: response.status, body: (await response.json()) as any };
 }

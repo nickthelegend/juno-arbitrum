@@ -1,0 +1,23 @@
+# Reproducible check that the deployed Stylus CurveMath program was built from
+# this repo's source: `cargo stylus verify` rebuilds the crate in the pinned
+# Docker image and compares it with the code in the deployment transaction.
+# Runs on an x86 runner (the image is x86; Apple Silicon emulation crashes rustc).
+name: stylus-verify
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_tx:
+        description: CurveMath deployment transaction hash
+        default: "0x62ccef112150c59e5df0de6a7d987f4a81f4228279e5847ebf20138441f6ef3b"
+      rpc:
+        description: RPC endpoint
+        default: https://sepolia-rollup.arbitrum.io/rpc
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install --locked cargo-stylus --version 0.10.9
+      - working-directory: stylus/curve-math
+        run: cargo stylus verify --endpoint "${{ inputs.rpc }}" --deployment-tx "${{ inputs.deployment_tx }}"

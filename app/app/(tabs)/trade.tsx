@@ -1,7 +1,7 @@
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import styled from "styled-components/native";
@@ -25,34 +25,33 @@ import { CoinArt, Identicon } from "../../components/art";
 import { Handle } from "../../components/Handle";
 import { Tappable } from "../../components/Press";
 import { QuickTrade } from "../../components/QuickTrade";
-import { juno, type Coin, type TesseraCompany, type Trader } from "../../lib/api";
+import { juno, type Coin, type StockReference, type Trader } from "../../lib/api";
+import { explorer } from "../../lib/chain";
 import { useLinkedState } from "../../lib/linked";
-import { bigMoney, count, invalidateMarkets, loadMarkets, progressLabel } from "../../lib/markets";
-import { money, useApi } from "../../lib/useApi";
+import { count, invalidateMarkets, loadMarkets, progressLabel } from "../../lib/markets";
+import { age, money, useApi } from "../../lib/useApi";
 import { useViewerOnce } from "../../lib/social";
 import { theme } from "../../theme";
 
-type Sort = "preipo" | "stocks" | "memes" | "traders";
+type Sort = "stocks" | "memes" | "traders";
 
 const SORTS = [
-  { id: "preipo" as const, label: "Pre-IPO" },
   { id: "stocks" as const, label: "Stocks" },
   { id: "memes" as const, label: "Memes" },
   { id: "traders" as const, label: "Traders" },
 ];
 
 /**
- * Trade: the markets that are not posts.
+ * Trade: the markets as lists.
  *
- * **Pre-IPO leads**, because it is the thing nobody else can offer: companies
- * that have not listed, each with a Meteora DBC curve marked against the
- * company's Tessera T-token. The card is the company — Tessera's mark, its
- * valuation, how many wallets hold the T-token — and under it the Juno
- * markets that track it, one tap from a trade.
- *
- * **Stocks** are the same idea against a Pyth equity feed. **Memes** are the
- * posts, as a list rather than a feed, for someone who wants to compare
- * curves instead of scrolling pictures. **Traders** ranks the people.
+ * **Stocks** lead: each Chainlink reference (TSLA, NVDA, AAPL) with its price,
+ * how old that price is and whether the market is open, and under it the
+ * Juno trackers held to it. A tracker's curve contract reads the same feed on
+ * every buy and reverts one that would leave the band, or any buy at all once
+ * the price is stale — so "Market closed" here is the contract's rule, not a
+ * label. **Memes** are the posts, as a list rather than a feed, for someone who
+ * wants to compare curves instead of scrolling pictures. **Traders** ranks the
+ * people.
  *
  * Every Trade button opens the same sheet the coin screen uses, over this
  * screen — quoting against the live curve is the same act wherever it starts.
@@ -63,48 +62,41 @@ export default function TradeScreen() {
   const [sort, setSort] = useLinkedState<Sort>(
     "sort",
     SORTS.map((option) => option.id),
-    "preipo",
+    "stocks",
   );
   const onTraders = sort === "traders";
+  const onStocks = sort === "stocks";
 
   // Read with the same viewer as the feed and the reels, so all three share one walk.
   const once = useViewerOnce();
   const markets = useApi(
-    () => (onTraders || !once.ready ? Promise.resolve(null) : loadMarkets(once.viewer())),
-    [onTraders, once.ready],
+    () => (sort !== "memes" || !once.ready ? Promise.resolve(null) : loadMarkets(once.viewer())),
+    [sort, once.ready],
   );
-  const tessera = useApi(() => (sort === "preipo" ? juno.tessera() : Promise.resolve(null)), [sort]);
+  const stocks = useApi(() => (onStocks ? juno.stocks() : Promise.resolve(null)), [onStocks]);
   const board = useApi(() => (onTraders ? juno.leaderboard(25) : Promise.resolve(null)), [onTraders]);
-  const [trade, setTrade] = useState<Coin | null>(null);
-
-  const byAddress = useMemo(() => {
-    const map = new Map<string, Coin>();
-    for (const coin of [...(markets.data?.preipo ?? []), ...(markets.data?.stocks ?? []), ...(markets.data?.posts ?? [])]) {
-      map.set(coin.address, coin);
-    }
-    return map;
-  }, [markets.data]);
-
-  const openTrade = (address: string) => {
-    const coin = byAddress.get(address);
-    // A market the list could not price has no quote to open a sheet
-    // against; its own screen reads it on its own.
-    if (coin) setTrade(coin);
-    else router.push(`/coin/${address}`);
-  };
+  const [trade, setTrade] = useState<{ coin: Coin; side: "buy" | "sell" } | null>(null);
 
   const refresh = () => {
     invalidateMarkets();
     markets.refresh();
-    tessera.refresh();
+    stocks.refresh();
   };
 
   const refreshControl = (
     <RefreshControl
-      refreshing={markets.refreshing || tessera.refreshing}
+      refreshing={markets.refreshing || stocks.refreshing}
       onRefresh={refresh}
       tintColor={theme.colors.muted}
     />
+  );
+
+  const loadingCards = (
+    <Loading>
+      {[0, 1].map((i) => (
+        <Skeleton key={i} h={220} round={theme.radius.lg} />
+      ))}
+    </Loading>
   );
 
   return (
@@ -116,19 +108,15 @@ export default function TradeScreen() {
 
       {onTraders ? (
         <TraderBoard board={board} onOpen={(wallet) => router.push(`/trader/${wallet}` as never)} />
-      ) : sort === "preipo" ? (
-        tessera.loading ? (
-          <Loading>
-            {[0, 1].map((i) => (
-              <Skeleton key={i} h={260} round={theme.radius.lg} />
-            ))}
-          </Loading>
-        ) : tessera.error ? (
+      ) : onStocks ? (
+        stocks.error && !stocks.loading ? (
           <Placeholder
-            title="Could not reach Tessera"
-            detail={tessera.error}
-            action={<Button label="Try again" onPress={tessera.refresh} />}
+            title="Could not load the stocks"
+            detail={stocks.error}
+            action={<Button label="Try again" onPress={stocks.refresh} />}
           />
+        ) : stocks.loading || stocks.data === null ? (
+          loadingCards
         ) : (
           <ScrollView
             contentContainerStyle={{ width: "100%", paddingHorizontal: 16, paddingBottom: 130, gap: 14 }}
@@ -136,39 +124,52 @@ export default function TradeScreen() {
             refreshControl={refreshControl}
           >
             <Intro />
-            {(tessera.data?.tokens ?? []).map((company) => (
-              <CompanyCard
-                key={company.id}
-                company={company}
-                live={byAddress}
-                pricing={!markets.data}
-                onTrade={openTrade}
-                onOpen={(address) => router.push(`/coin/${address}`)}
+            {(stocks.data ?? []).length === 0 ? (
+              <Placeholder
+                title="No stock trackers yet"
+                detail="Trackers held to a Chainlink stock price land here once they are launched."
               />
-            ))}
+            ) : (
+              (stocks.data ?? []).map((reference) => (
+                <StockCard
+                  key={reference.symbol}
+                  reference={reference}
+                  onTrade={(coin, side) => setTrade({ coin, side })}
+                  onOpen={(address) => router.push(`/coin/${address}`)}
+                />
+              ))
+            )}
             <Caption style={{ paddingHorizontal: 4 }}>
-              Marks are Tessera&apos;s published prices, read live. A T-token is a loan participation
-              right, not a share.
+              Prices are Chainlink&apos;s, read on-chain. A tracker is a Juno curve held to the
+              stock&apos;s price, not a share.
             </Caption>
           </ScrollView>
         )
       ) : markets.loading || markets.data === null ? (
-        <Loading>
-          <Ledger>
-            {[0, 1, 2, 3].map((i) => (
-              <Entry key={i} $first={i === 0}>
-                <Row gap={12}>
-                  <Skeleton h={44} w={44} round={14} />
-                  <Col gap={8} style={{ flex: 1 }}>
-                    <Skeleton h={14} w="55%" />
-                    <Skeleton h={11} w="35%" />
-                  </Col>
-                  <Skeleton h={36} w={72} round={12} />
-                </Row>
-              </Entry>
-            ))}
-          </Ledger>
-        </Loading>
+        markets.error ? (
+          <Placeholder
+            title="Could not load the market"
+            detail={markets.error}
+            action={<Button label="Try again" onPress={markets.refresh} />}
+          />
+        ) : (
+          <Loading>
+            <Ledger>
+              {[0, 1, 2, 3].map((i) => (
+                <Entry key={i} $first={i === 0}>
+                  <Row gap={12}>
+                    <Skeleton h={44} w={44} round={14} />
+                    <Col gap={8} style={{ flex: 1 }}>
+                      <Skeleton h={14} w="55%" />
+                      <Skeleton h={11} w="35%" />
+                    </Col>
+                    <Skeleton h={36} w={72} round={12} />
+                  </Row>
+                </Entry>
+              ))}
+            </Ledger>
+          </Loading>
+        )
       ) : markets.error ? (
         <Placeholder
           title="Could not load the market"
@@ -184,58 +185,41 @@ export default function TradeScreen() {
           {(markets.data?.missing ?? 0) > 0 ? (
             <Footnote>
               {markets.data!.missing} more {markets.data!.missing === 1 ? "market is" : "markets are"}{" "}
-              listed but could not be priced — the RPC is rate-limiting. Pull to retry.
+              listed but could not be priced just now. Pull to retry.
             </Footnote>
           ) : null}
-          {(() => {
-            const list = sort === "stocks" ? markets.data!.stocks : markets.data!.posts;
-            if (list.length === 0) {
-              return (
-                <Placeholder
-                  title={sort === "stocks" ? "No stock markets yet" : "No memes yet"}
-                  detail={sort === "stocks" ? "Issuances marked against Pyth land here." : "Post something with +."}
+          {markets.data!.posts.length === 0 ? (
+            <Placeholder title="No memes yet" detail="Post something with +." />
+          ) : (
+            <View style={{ gap: 14 }}>
+              <Intro
+                pill="Launched on Arbitrum"
+                title="Every post is a market."
+                body="Posts and reels launched as coins. Early buyers ride the curve; creators earn the fees."
+              />
+              {markets.data!.posts.map((coin) => (
+                <MarketCard
+                  key={coin.address}
+                  coin={coin}
+                  onOpen={() => router.push(`/coin/${coin.address}`)}
+                  onTrade={() => setTrade({ coin, side: "buy" })}
                 />
-              );
-            }
-            return (
-              <View style={{ gap: 14 }}>
-                {sort === "stocks" ? (
-                  <Intro
-                    pill="Priced by Pyth"
-                    title="Listed names, on a curve."
-                    body="Each tracker is a Meteora bonding curve, marked against the stock's live Pyth price."
-                  />
-                ) : (
-                  <Intro
-                    pill="Launched on DBC"
-                    title="Every post is a market."
-                    body="Posts and reels launched as coins. Early buyers ride the curve; creators earn the fees."
-                  />
-                )}
-                {list.map((coin) => (
-                  <MarketCard
-                    key={coin.address}
-                    coin={coin}
-                    stock={sort === "stocks"}
-                    onOpen={() => router.push(`/coin/${coin.address}`)}
-                    onTrade={() => setTrade(coin)}
-                  />
-                ))}
-              </View>
-            );
-          })()}
+              ))}
+            </View>
+          )}
         </ScrollView>
       )}
 
       {trade ? (
         <QuickTrade
-          coin={trade}
-          side="buy"
+          coin={trade.coin}
+          side={trade.side}
           onClose={() => setTrade(null)}
           onDone={() => {
             setTrade(null);
             invalidateMarkets();
             markets.refresh();
+            stocks.refresh();
           }}
         />
       ) : null}
@@ -245,9 +229,9 @@ export default function TradeScreen() {
 
 /** What this list is, once, in the app's one dark panel. */
 function Intro({
-  pill = "Marked by Tessera",
-  title = "Own the curve before the IPO.",
-  body = "Companies that have not listed yet, each with a Meteora bonding curve priced against its Tessera mark.",
+  pill = "Held to Chainlink",
+  title = "Listed names, on a curve.",
+  body = "Each tracker is a Juno bonding curve priced in USDC. Its contract reads the stock's Chainlink price on every buy and refuses one that would leave the band.",
 }: {
   pill?: string;
   title?: string;
@@ -274,133 +258,6 @@ function Intro({
   );
 }
 
-/**
- * One pre-IPO company and the markets on it.
- *
- * The company half is Tessera's, read live: mark, valuation, holders. The
- * market half is Juno's: the curve that tracks it, priced from chain, with the
- * preset it was launched on — the issuance shape is the product.
- */
-/** Bundled so the Pre-IPO page never waits on, or breaks with, a logo host. */
-const COMPANY_LOGOS: Record<string, number> = {
-  "T-OpenAI": require("../../assets/logos/openai.png"),
-  "T-Kalshi": require("../../assets/logos/kalshi.png"),
-  "T-SpaceX": require("../../assets/logos/spacex.png"),
-};
-
-function CompanyCard({
-  company,
-  live,
-  pricing,
-  onTrade,
-  onOpen,
-}: {
-  company: TesseraCompany;
-  live: Map<string, Coin>;
-  pricing: boolean;
-  onTrade: (address: string) => void;
-  onOpen: (address: string) => void;
-}) {
-  const name = company.name.replace(/^T-/, "");
-  // The company's own mark where we have it — a trader looks for the OpenAI
-  // knot, not a token badge. Otherwise the icon the T-token's own metadata
-  // points at, an SVG drawn through expo-image.
-  const logo =
-    COMPANY_LOGOS[company.id] ?? { uri: `https://cdn.tesseralab.co/tessera/tokenicon_${company.id}.svg` };
-
-  return (
-    <View style={styles.company}>
-      <View style={styles.companyHead}>
-        <View style={styles.logo}>
-          <ExpoImage
-            source={logo}
-            style={{ width: 44, height: 44 }}
-            contentFit="cover"
-            accessibilityLabel={`${name} logo`}
-          />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.companyName}>{name}</Text>
-          <Text style={styles.companySector}>
-            {company.sector} · {company.id}
-          </Text>
-        </View>
-        <View style={styles.preBadge}>
-          <Text style={styles.preBadgeText}>PRE-IPO</Text>
-        </View>
-      </View>
-
-      <View style={styles.stats}>
-        <Stat label="Valuation" value={bigMoney(company.markValuation)} />
-        <View style={styles.statRule} />
-        <Stat label="T-token mark" value={money(company.markPrice, "USD", { compact: false })} />
-        <View style={styles.statRule} />
-        <Stat label="Holders" value={count(company.holders)} />
-      </View>
-
-      {company.markets.length === 0 ? (
-        <Text style={styles.noMarket}>No Juno market on {name} yet.</Text>
-      ) : (
-        company.markets.map((market) => {
-          const coin = live.get(market.address);
-          const pct = (coin?.curve.progress ?? market.progress ?? 0) * 100;
-          return (
-            <Tappable key={market.address} onPress={() => onOpen(market.address)} to={0.985}>
-              <View style={styles.market}>
-                <CoinArt uri={coin ? juno.still(coin.media) : null} seed={market.address} size={40} radius={12} />
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={styles.marketName} numberOfLines={1}>
-                    ${market.symbol} <Text style={styles.marketPreset}>{market.curvePreset}</Text>
-                  </Text>
-                  {/* The claim the tracker makes, checked: what one token
-                      implies per share against Tessera's mark, and whether
-                      that sits inside the preset's band. This is the whole
-                      point of a pre-IPO curve, and the card never said it. */}
-                  {coin?.nav && coin.nav.impliedUsd !== null && coin.nav.deviation !== null ? (
-                    <Text
-                      style={[
-                        styles.marketMeta,
-                        { color: coin.nav.withinBand ? theme.colors.pos : theme.colors.neg, fontWeight: "700" },
-                      ]}
-                      numberOfLines={2}
-                    >
-                      Implies {money(coin.nav.impliedUsd, "USD", { compact: false })}/share ·{" "}
-                      {coin.nav.deviation >= 0 ? "+" : ""}
-                      {(coin.nav.deviation * 100).toFixed(2)}% vs mark ·{" "}
-                      {coin.nav.withinBand ? "inside" : "outside"} ±{coin.nav.bandBps / 100}% band
-                    </Text>
-                  ) : null}
-                  <Text style={styles.marketMeta} numberOfLines={1}>
-                    {money(coin?.marketCap ?? market.marketCap, coin?.marketCapCurrency ?? market.currency ?? "USD")} cap ·{" "}
-                    {market.graduated ? "graduated" : `${progressLabel(pct)} to graduation`}
-                  </Text>
-                </View>
-                {market.graduated ? null : (
-                  <Tappable onPress={() => onTrade(market.address)} to={0.94}>
-                    <View
-                      style={[styles.tradeButton, pricing && !coin ? { opacity: 0.5 } : null]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Trade $${market.symbol}`}
-                    >
-                      <Text style={styles.tradeText}>Trade</Text>
-                    </View>
-                  </Tappable>
-                )}
-              </View>
-            </Tappable>
-          );
-        })
-      )}
-
-      {/* Why Juno tracks the T-token rather than trading it directly, read
-          from the mint today rather than asserted. */}
-      {company.onChain?.blocked ? (
-        <Text style={styles.why}>Why a tracker: {company.onChain.blocked}</Text>
-      ) : null}
-    </View>
-  );
-}
-
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "pos" | "neg" }) {
   return (
     <View style={{ flex: 1, gap: 3 }}>
@@ -416,7 +273,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "po
   );
 }
 
-/** The company behind a listed ticker, where the tracker's own name is only "NVDAx Issuance". */
+/** The company behind a listed ticker, for when the reference comes back without a name. */
 const LISTED: Record<string, { name: string; venue: string }> = {
   AAPL: { name: "Apple", venue: "Nasdaq" },
   MSFT: { name: "Microsoft", venue: "Nasdaq" },
@@ -460,89 +317,165 @@ function StockLogo({ ticker }: { ticker: string }) {
 }
 
 /**
- * One market, as a card — the same shape as a pre-IPO company.
+ * One stock and the trackers held to it.
  *
- * A stock card leads with the thing the tracker is *of*: the company, its
- * live Pyth price, and how far the curve sits from that price. A meme card
- * leads with the post: its art, who made it, and the social numbers that are
- * the only fundamentals a meme has. Both end on the curve and the Trade
- * button, because that part is the same product either way.
+ * The stock half is Chainlink's, read on-chain: the price, how old it is, and
+ * whether the market is open (a fresh price) or closed (stale, so the
+ * trackers take sells only). The tracker half is Juno's: each curve, its price
+ * against the stock, and the band its contract enforces.
+ */
+function StockCard({
+  reference,
+  onTrade,
+  onOpen,
+}: {
+  reference: StockReference;
+  onTrade: (coin: Coin, side: "buy" | "sell") => void;
+  onOpen: (address: string) => void;
+}) {
+  const listed = LISTED[reference.symbol];
+  const open = reference.marketOpen;
+
+  return (
+    <View style={styles.company}>
+      <View style={styles.companyHead}>
+        <StockLogo ticker={reference.symbol} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={styles.companyName} numberOfLines={1}>
+            {reference.name || listed?.name || reference.symbol}
+          </Text>
+          <Text
+            style={styles.companySector}
+            numberOfLines={1}
+            onPress={() => void Linking.openURL(explorer("address", reference.feed))}
+          >
+            {listed?.venue ?? "Listed"} · {reference.symbol} · Chainlink feed ↗
+          </Text>
+        </View>
+        <View style={[styles.preBadge, open ? styles.badgeInk : styles.badgeClosed]}>
+          <Text style={[styles.preBadgeText, open ? styles.badgeInkText : styles.badgeClosedText]}>
+            {open ? "OPEN" : "CLOSED"}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.stats}>
+        <Stat
+          label="Chainlink price"
+          value={reference.price === null ? "—" : money(reference.price, "USD", { compact: false })}
+        />
+        <View style={styles.statRule} />
+        <Stat label="Updated" value={reference.ageSeconds === null ? "—" : `${age(reference.ageSeconds)} ago`} />
+        <View style={styles.statRule} />
+        <Stat label="Market" value={open ? "Open" : "Sells only"} tone={open ? "pos" : "neg"} />
+      </View>
+
+      {!open ? (
+        <Text style={styles.closed}>Market closed · sells only. The price is stale, so the curve refuses buys.</Text>
+      ) : null}
+
+      {reference.trackers.length === 0 ? (
+        <Text style={styles.noMarket}>No Juno tracker on {reference.symbol} yet.</Text>
+      ) : (
+        reference.trackers.map((coin) => {
+          const pct = coin.curve.progress * 100;
+          const nav = coin.nav ?? null;
+          const deviation = nav?.deviationPct ?? null;
+          const band = nav ? nav.bandBps / 100 : null;
+          const inside = deviation === null || band === null ? null : Math.abs(deviation) <= band;
+          return (
+            <Tappable key={coin.address} onPress={() => onOpen(coin.address)} to={0.985}>
+              <View style={styles.market}>
+                <CoinArt uri={juno.still(coin.media)} seed={coin.address} size={40} radius={12} />
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={styles.marketName} numberOfLines={1}>
+                    ${coin.symbol} <Text style={styles.marketPreset}>{coin.curvePreset}</Text>
+                  </Text>
+                  {nav ? (
+                    <Text
+                      style={[
+                        styles.marketMeta,
+                        inside === null
+                          ? null
+                          : { color: inside ? theme.colors.pos : theme.colors.neg, fontWeight: "700" },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      Curve {money(nav.curvePrice, "USD", { compact: false })}
+                      {deviation === null ? "" : ` · ${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}% vs stock`}
+                      {band === null ? "" : ` · ±${band}% band`}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.marketMeta} numberOfLines={1}>
+                    {money(coin.marketCap, coin.marketCapCurrency)} cap ·{" "}
+                    {coin.curve.graduated ? "graduated" : `${progressLabel(pct)} to graduation`}
+                  </Text>
+                </View>
+                {coin.curve.graduated ? (
+                  <Pill label="On Uniswap" />
+                ) : (
+                  <Tappable onPress={() => onTrade(coin, open ? "buy" : "sell")} to={0.94}>
+                    <View
+                      style={styles.tradeButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Trade $${coin.symbol}`}
+                    >
+                      <Text style={styles.tradeText}>{open ? "Trade" : "Sell"}</Text>
+                    </View>
+                  </Tappable>
+                )}
+              </View>
+            </Tappable>
+          );
+        })
+      )}
+    </View>
+  );
+}
+
+/**
+ * One post or reel, as a card.
+ *
+ * Leads with the post: its art, who made it, and the social numbers that are
+ * the only fundamentals a meme has. Ends on the curve and the Trade button.
  */
 function MarketCard({
   coin,
-  stock,
   onOpen,
   onTrade,
 }: {
   coin: Coin;
-  stock: boolean;
   onOpen: () => void;
   onTrade: () => void;
 }) {
   const pct = coin.curve.progress * 100;
-  // `Equity.US.NVDA/USD` → `NVDA`: the ticker is what a trader reads.
-  const ticker = stock && coin.reference ? coin.reference.id.split(".").pop()?.split("/")[0] ?? null : null;
-  const listed = ticker ? LISTED[ticker] : undefined;
-  const nav = coin.nav ?? null;
-  const deviation = nav?.deviation ?? null;
 
   return (
     <Tappable onPress={onOpen} to={0.985}>
       <View style={styles.company}>
         <View style={styles.companyHead}>
-          {stock ? (
-            <StockLogo ticker={ticker ?? coin.symbol} />
-          ) : (
-            <CoinArt uri={juno.still(coin.media)} seed={coin.address} size={48} radius={14} />
-          )}
+          <CoinArt uri={juno.still(coin.media)} seed={coin.address} size={48} radius={14} />
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={styles.companyName} numberOfLines={1}>
-              {stock ? (listed?.name ?? coin.name) : coin.name}
+              {coin.name}
             </Text>
             <Text style={styles.companySector} numberOfLines={1}>
-              {stock
-                ? `${listed?.venue ?? "Listed"} · ${ticker ?? coin.symbol} · Pyth`
-                : (
-                  <>
-                    by <Handle wallet={coin.creator.wallet} /> · {coin.format === "reel" ? "reel" : "post"}
-                  </>
-                )}
+              by <Handle wallet={coin.creator.wallet} /> · {coin.format === "reel" ? "reel" : "post"}
             </Text>
           </View>
-          <View style={[styles.preBadge, stock ? styles.badgeInk : styles.badgeHeart]}>
-            <Text style={[styles.preBadgeText, stock ? styles.badgeInkText : styles.badgeHeartText]}>
-              {stock ? "LISTED" : coin.format === "reel" ? "REEL" : "MEME"}
+          <View style={[styles.preBadge, styles.badgeHeart]}>
+            <Text style={[styles.preBadgeText, styles.badgeHeartText]}>
+              {coin.format === "reel" ? "REEL" : "MEME"}
             </Text>
           </View>
         </View>
 
         <View style={styles.stats}>
-          {stock ? (
-            <>
-              {/* Absent, not zero, when the feed did not answer — or when the
-                  server predates the reference read. */}
-              <Stat
-                label={nav?.state === "closed" ? "Last close" : "Pyth price"}
-                value={nav ? money(nav.priceUsd, "USD", { compact: false }) : "—"}
-              />
-              <View style={styles.statRule} />
-              <Stat label="Market cap" value={money(coin.marketCap, coin.marketCapCurrency)} />
-              <View style={styles.statRule} />
-              <Stat
-                label="Curve vs price"
-                value={deviation === null ? "—" : `${deviation >= 0 ? "+" : ""}${(deviation * 100).toFixed(2)}%`}
-                tone={deviation === null ? undefined : nav?.withinBand ? "pos" : "neg"}
-              />
-            </>
-          ) : (
-            <>
-              <Stat label="Market cap" value={money(coin.marketCap, coin.marketCapCurrency)} />
-              <View style={styles.statRule} />
-              <Stat label="Likes" value={coin.likes === undefined ? "—" : count(coin.likes) || "0"} />
-              <View style={styles.statRule} />
-              <Stat label="Replies" value={coin.commentCount === undefined ? "—" : count(coin.commentCount) || "0"} />
-            </>
-          )}
+          <Stat label="Market cap" value={money(coin.marketCap, coin.marketCapCurrency)} />
+          <View style={styles.statRule} />
+          <Stat label="Likes" value={coin.likes === undefined ? "—" : count(coin.likes) || "0"} />
+          <View style={styles.statRule} />
+          <Stat label="Replies" value={coin.commentCount === undefined ? "—" : count(coin.commentCount) || "0"} />
         </View>
 
         <View style={styles.market}>
@@ -565,7 +498,7 @@ function MarketCard({
             </View>
           </View>
           {coin.curve.graduated ? (
-            <Pill label="On DAMM v2" />
+            <Pill label="On Uniswap" />
           ) : (
             <Tappable onPress={onTrade} to={0.94}>
               <View style={styles.tradeButton} accessibilityRole="button" accessibilityLabel={`Trade $${coin.symbol}`}>
@@ -610,15 +543,6 @@ const styles = StyleSheet.create({
     ...theme.shadow.card,
   },
   companyHead: { flexDirection: "row", alignItems: "center", gap: 12 },
-  logo: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.colors.ink,
-  },
   companyName: { fontSize: 20, fontWeight: "900", letterSpacing: -0.5, color: theme.colors.text },
   companySector: { fontSize: 12, color: theme.colors.muted },
   preBadge: {
@@ -631,6 +555,9 @@ const styles = StyleSheet.create({
   badgeInk: { backgroundColor: theme.colors.ink },
   badgeInkText: { color: theme.colors.lime },
   badgeHeart: { backgroundColor: "rgba(255,45,111,0.12)" },
+  badgeClosed: { backgroundColor: theme.colors.surfaceAlt },
+  badgeClosedText: { color: theme.colors.neg },
+  closed: { fontSize: 12, lineHeight: 17, fontWeight: "600", color: theme.colors.neg },
   badgeHeartText: { color: theme.colors.heart },
 
   stats: {
@@ -649,7 +576,6 @@ const styles = StyleSheet.create({
   marketPreset: { fontSize: 12, fontWeight: "600", color: theme.colors.muted },
   marketMeta: { fontSize: 12, color: theme.colors.muted, fontVariant: ["tabular-nums"] },
   noMarket: { fontSize: 13, color: theme.colors.muted },
-  why: { fontSize: 11, lineHeight: 15, color: theme.colors.faint },
 
   tradeButton: {
     height: 38,
@@ -761,18 +687,18 @@ function TraderBoard({
       {board.data?.partial ? (
         <Footnote>
           Ranked from {board.data.poolsRead}{" "}
-          {board.data.poolsRead === 1 ? "pool" : "pools"} — some histories would not
-          load, so this is not every trade on the cluster. Pull to retry.
+          {board.data.poolsRead === 1 ? "curve" : "curves"} — some histories would not
+          load, so this is not every trade there is. Pull to retry.
         </Footnote>
       ) : null}
 
       {traders.length === 0 ? (
         <Placeholder
-          title={board.data?.partial ? "Could not read the cluster" : "Nobody has traded yet"}
+          title={board.data?.partial ? "Could not read the trades" : "Nobody has traded yet"}
           detail={
             board.data?.partial
-              ? "The RPC is rate-limiting, so no pool history could be walked. Pull to retry."
-              : "The board fills in as soon as the first swap lands."
+              ? "No trade history could be read just now. Pull to retry."
+              : "The board fills in as soon as the first trade lands."
           }
         />
       ) : (

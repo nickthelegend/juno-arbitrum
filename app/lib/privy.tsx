@@ -1,38 +1,7 @@
-import React from "react";
-
-import type { PrivyBridge } from "./privy.types";
-
 /**
- * The web build has no Privy.
- *
- * `@privy-io/expo` is a React Native SDK with native modules, so the web export
- * keeps the device key it has always had. iOS and Android resolve
- * `privy.native.tsx` instead.
+ * Type-checking entry only. Metro never bundles this file: it picks
+ * `privy.native.tsx` on iOS and Android and `privy.web.tsx` in the browser.
+ * Both export the same names with the same types, so `tsc` checks every
+ * import of `./privy` against the web one.
  */
-
-export const PRIVY_ENABLED = false;
-
-export function PrivyRoot({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
-}
-
-const unavailable = () => Promise.reject(new Error("Privy is not available on web"));
-
-const OFF: PrivyBridge = {
-  enabled: false,
-  ready: true,
-  status: "signed-out",
-  address: null,
-  walletStatus: "off",
-  error: null,
-  retry: () => Promise.resolve(),
-  sendCode: unavailable,
-  loginWithCode: unavailable,
-  signTransaction: unavailable,
-  signMessage: unavailable,
-  logout: () => Promise.resolve(),
-};
-
-export function usePrivyBridge(): PrivyBridge {
-  return OFF;
-}
+export * from "./privy.web";

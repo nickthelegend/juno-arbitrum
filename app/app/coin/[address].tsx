@@ -37,9 +37,17 @@ import {
   Stat,
   Title,
 } from "../../components/kit";
-import { juno, WSOL_MINT, type NavReference, type Plan } from "../../lib/api";
-import { money, since, tokens, useApi } from "../../lib/useApi";
-import { bigMoney } from "../../lib/markets";
+import { juno, type NavReference, type Plan } from "../../lib/api";
+import {
+  describeTxError,
+  displayAddress,
+  explorer,
+  NETWORK_NAME,
+  sameAddress,
+  shortAddress,
+  uniswapPoolUrl,
+} from "../../lib/chain";
+import { age, money, since, tokens, useApi } from "../../lib/useApi";
 import { shareCoin } from "../../lib/social";
 import { useWallet } from "../../lib/wallet";
 import { theme } from "../../theme";
@@ -64,11 +72,20 @@ import { theme } from "../../theme";
  * tabbed, the action bar is always in reach and the page never changes height
  * when a slow read lands.
  *
- * ## The NAV band and the savings card
+ * ## The band card and the savings card
  *
- * Both live under **Details**, because that is what they are: facts about this
- * instrument rather than about its market. The watch toggle stays in the nav
- * bar, where it is one tap from anywhere on the page.
+ * A stock tracker's band card — the Chainlink price, the curve's price, how far
+ * apart they are, the band the contract enforces and whether the market is
+ * open — sits right under the price, because on a tracker that *is* the price
+ * story. The savings card lives under **Details**. The watch toggle stays in
+ * the nav bar, where it is one tap from anywhere on the page.
+ *
+ * ## After the curve
+ *
+ * When the curve sells its last token anyone can graduate it: the contract
+ * moves the tokens and the quote it raised into a Uniswap v3 pool. The page
+ * offers that button when the curve is full, and once graduated it links out
+ * to the pool instead of offering a buy.
  */
 
 const TABS = [
@@ -81,7 +98,9 @@ const TABS = [
 type Tab = (typeof TABS)[number]["id"];
 
 export default function CoinScreen() {
-  const { mint } = useLocalSearchParams<{ mint: string }>();
+  const { address: rawAddress } = useLocalSearchParams<{ address: string }>();
+  // The server keys every coin by its lowercase token address.
+  const mint = (rawAddress ?? "").toLowerCase();
   const router = useRouter();
   const [sheet, setSheet] = useState<"buy" | "sell" | null>(null);
   const [savingsSheet, setSavingsSheet] = useState<"alert" | "plan" | null>(null);
@@ -106,34 +125,17 @@ export default function CoinScreen() {
   const comments = useApi(() => juno.comments(mint), [mint]);
 
   /*
-   * What this wallet holds of this coin, for the sell side.
-   *
-   * It was read out of the whole-portfolio walk, which reads every pool's
-   * history and is routinely cut short on the public RPC — so right after a
-   * buy the sell tab said "Balance: —" and every percentage was disabled. One
-   * token-balance read is exact and fast, and it is re-read after each trade.
+   * What this wallet holds: the coin, for the sell side; ETH and USDC, for the
+   * buy side and for gas. One read, re-read after each trade.
    */
   const [tradeRevision, setTradeRevision] = useState(0);
-  const held = useApi(
-    async () => (wallet.address ? juno.balance(wallet.address, mint) : null),
+  const balances = useApi(
+    async () => (wallet.address ? juno.balances(wallet.address, mint) : null),
     [wallet.address, mint, tradeRevision],
   );
-  const holding = held.data?.balance ?? null;
-
-  /* What a buy would spend from. Read separately because it is the quote side,
-     which the portfolio does not cover: it accounts for coins held, not for the
-     SOL that buys them. */
-  const quoteMint = coin?.quote.mint ?? null;
-  const spendable = useApi(
-    async () => (wallet.address && quoteMint ? juno.balance(wallet.address, quoteMint) : null),
-    [wallet.address, quoteMint, tradeRevision],
-  );
-  // SOL for the network fee, when the market is priced in something else.
-  const feeSol = useApi(
-    async () =>
-      wallet.address && quoteMint && quoteMint !== WSOL_MINT ? juno.balance(wallet.address, WSOL_MINT) : null,
-    [wallet.address, quoteMint, tradeRevision],
-  );
+  const holding = balances.data?.token ?? null;
+  const spendsUsdc = coin?.quote.symbol === "USDC";
+  const quoteBalance = balances.data ? (spendsUsdc ? balances.data.usdc : balances.data.eth) : null;
 
   /*
    * Watching, alerts and plans for this wallet on this coin.
@@ -205,7 +207,7 @@ export default function CoinScreen() {
           <Skeleton h={64} round={16} style={{ marginTop: 18 }} />
         </Loading>
       ) : detail.errorStatus === 404 || detail.errorStatus === 400 ? (
-        // Not a failure to retry: there is no such coin on this cluster.
+        // Not a failure to retry: there is no such coin on this chain.
         <Placeholder
           title="No such coin"
           detail="Nothing on Juno has this address. It may be on another network, or the link is wrong."
@@ -372,14 +374,17 @@ export default function CoinScreen() {
                 </Cell>
               </Band>
 
-              {/* The creator's own payday, on their own coin. */}
-              {wallet.address && wallet.address === coin.creator.wallet ? (
+              {/* A tracker's band: the stock, the curve, and the rule between them. */}
+              {coin.nav ? <NavBand nav={coin.nav} feed={coin.reference?.feed ?? null} /> : null}
+
+              {/* The creator's own payday, on their own coin. The contract
+                  checks it too; the button is simply not shown to anyone else. */}
+              {wallet.address && sameAddress(wallet.address, coin.creator.wallet) ? (
                 <ClaimFees
-                  mint={coin.address}
-                  owner={wallet.address}
+                  curve={coin.pool}
+                  creator={wallet.address}
                   rewards={coin.creatorRewards}
                   currency={coin.marketCapCurrency}
-                  sign={wallet.sign}
                   onClaimed={() => {
                     setTradeRevision((n) => n + 1);
                     detail.refresh();
@@ -389,7 +394,15 @@ export default function CoinScreen() {
 
               {/* Raised against threshold, with both ends labelled. A bar with
                   no numbers on it is a mood. */}
-              {!coin.curve.graduated ? (
+              {!coin.curve.graduated && coin.curve.progress >= 1 ? (
+                <Graduate
+                  curve={coin.pool}
+                  onGraduated={() => {
+                    setTradeRevision((n) => n + 1);
+                    detail.refresh();
+                  }}
+                />
+              ) : !coin.curve.graduated ? (
                 <RaisedRow>
                   <End>{money(coin.curve.raisedUsd, coin.marketCapCurrency)}</End>
                   <Track>
@@ -409,9 +422,16 @@ export default function CoinScreen() {
               ) : (
                 <Row gap={8} style={{ marginTop: 16 }}>
                   <Pill label="Graduated" tone="pos" />
-                  <Caption style={{ flex: 1 }}>
-                    Trading continues in this coin&rsquo;s DAMM v2 pool.
-                  </Caption>
+                  {coin.graduatedPool ? (
+                    <Tappable onPress={() => void Linking.openURL(uniswapPoolUrl(coin.graduatedPool!, coin.chainId))}>
+                      <Row gap={6} align="center">
+                        <LinkText>Trading on Uniswap</LinkText>
+                        <ExternalGlyph />
+                      </Row>
+                    </Tappable>
+                  ) : (
+                    <Caption style={{ flex: 1 }}>Trading on Uniswap.</Caption>
+                  )}
                 </Row>
               )}
 
@@ -452,8 +472,7 @@ export default function CoinScreen() {
               ) : (
                 <DetailsTab
                   coin={coin}
-                  cluster={detail.data!.cluster}
-                  launchSignature={detail.data!.launchSignature}
+                  launchTxHash={detail.data!.launchTxHash ?? null}
                   saveCard={
                     <SaveCard
                       coin={coin}
@@ -486,13 +505,29 @@ export default function CoinScreen() {
               </PostTap>
             </Tappable>
             {coin.curve.graduated ? (
-              <GraduatedNote>Trading continues in its DAMM v2 pool.</GraduatedNote>
+              coin.graduatedPool ? (
+                <Button
+                  label="Trading on Uniswap ↗"
+                  variant="ink"
+                  tall
+                  onPress={() => void Linking.openURL(uniswapPoolUrl(coin.graduatedPool!, coin.chainId))}
+                  style={{ flex: 1 }}
+                />
+              ) : (
+                <GraduatedNote>This market moved to Uniswap.</GraduatedNote>
+              )
+            ) : coin.curve.progress >= 1 ? (
+              // Every token on the curve has sold; a buy would revert
+              // `SoldOut`. The graduate card above is the next step.
+              <GraduatedNote>Curve is full — graduating.</GraduatedNote>
             ) : (
               <Button
-                label="Buy"
+                // A tracker whose stock price is stale takes sells only; the
+                // contract refuses buys, so the button does not offer one.
+                label={coin.nav?.marketOpen === false ? "Sell · market closed" : "Buy"}
                 variant="lime"
                 tall
-                onPress={() => setSheet("buy")}
+                onPress={() => setSheet(coin.nav?.marketOpen === false ? "sell" : "buy")}
                 style={{ flex: 1 }}
               />
             )}
@@ -503,8 +538,8 @@ export default function CoinScreen() {
               coin={coin}
               side={sheet}
               holding={holding}
-              quoteBalance={spendable.data?.balance ?? null}
-              feeBalance={quoteMint === WSOL_MINT ? null : (feeSol.data?.balance ?? null)}
+              quoteBalance={quoteBalance}
+              feeBalance={balances.data?.eth ?? null}
               initialAmount={sheet === "buy" && contributing ? String(contributing.amount) : ""}
               onFilled={(spent) => void recordFill(spent)}
               onCommented={() => comments.refresh()}
@@ -626,7 +661,7 @@ function ActivityTab({
             earn. */}
         <Body muted>
           {partial
-            ? "Trade history could not be read — the RPC is rate-limiting."
+            ? "Trade history could not be read just now. Pull to retry."
             : "No trades yet."}
         </Body>
       </Empty>
@@ -655,7 +690,7 @@ function ActivityTab({
       ))}
       {partial ? (
         <Caption style={{ marginTop: 12 }}>
-          Some of this pool&rsquo;s history would not load — these are the fills that did.
+          Some of this curve&rsquo;s history would not load — these are the fills that did.
         </Caption>
       ) : null}
     </>
@@ -676,7 +711,7 @@ function HoldersTab({
       <Empty>
         <Body muted>
           {unreadable
-            ? "The holder list is one of the calls the public RPC refuses outright. It could not be read — which is not the same as nobody holding this."
+            ? "The holder list could not be read just now — which is not the same as nobody holding this."
             : "Nobody holds this yet."}
         </Body>
       </Empty>
@@ -703,7 +738,7 @@ function HoldersTab({
         </Line>
       ))}
       <Caption style={{ marginTop: 12 }}>
-        The twenty largest token accounts — the most the RPC will return.
+        The twenty largest holders, from the token&rsquo;s transfers.
       </Caption>
     </>
   );
@@ -711,13 +746,11 @@ function HoldersTab({
 
 function DetailsTab({
   coin,
-  cluster,
-  launchSignature,
+  launchTxHash,
   saveCard,
 }: {
   coin: import("../../lib/api").Coin;
-  cluster: string;
-  launchSignature: string;
+  launchTxHash: string | null;
   saveCard: React.ReactNode;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
@@ -728,15 +761,13 @@ function DetailsTab({
   }, [copied]);
 
   async function copy(key: string, value: string) {
-    await Clipboard.setStringAsync(value);
+    await Clipboard.setStringAsync(displayAddress(value));
     setCopied(key);
   }
 
   return (
     <Col gap={0}>
       {saveCard ? <SaveSlot>{saveCard}</SaveSlot> : null}
-
-      {coin.nav ? <NavBand nav={coin.nav} /> : null}
 
       {coin.curve.graduated ? null : <DepthChart mint={coin.address} />}
 
@@ -747,32 +778,45 @@ function DetailsTab({
           shaded={false}
         />
         <DetailRow
-          label="Mint address"
-          value={`${coin.address.slice(0, 6)}…${coin.address.slice(-4)}`}
+          label="Token"
+          value={shortAddress(coin.address)}
           shaded
-          copied={copied === "mint"}
-          onCopy={() => void copy("mint", coin.address)}
+          copied={copied === "token"}
+          onCopy={() => void copy("token", coin.address)}
         />
         <DetailRow label="Ticker" value={coin.symbol} shaded={false} copied={copied === "ticker"} onCopy={() => void copy("ticker", coin.symbol)} />
-        <DetailRow label="Network" value={`Solana · ${cluster}`} shaded />
+        <DetailRow label="Network" value={NETWORK_NAME} shaded />
         <DetailRow label="Quote" value={coin.quote.symbol} shaded={false} />
-        <DetailRow label="Curve" value={coin.curvePreset} shaded />
+        <DetailRow label="Curve preset" value={coin.curvePreset} shaded />
         <DetailRow label="Format" value={coin.format === "reel" ? "Reel" : "Post"} shaded={false} />
         <DetailRow
-          label="Pool"
-          value={`${coin.pool.slice(0, 6)}…${coin.pool.slice(-4)}`}
+          label="Curve contract"
+          value={shortAddress(coin.pool)}
           shaded
-          copied={copied === "pool"}
-          onCopy={() => void copy("pool", coin.pool)}
+          copied={copied === "curve"}
+          onCopy={() => void copy("curve", coin.pool)}
         />
+        {coin.graduatedPool ? (
+          <DetailRow
+            label="Uniswap pool"
+            value={shortAddress(coin.graduatedPool)}
+            shaded={false}
+            copied={copied === "pool"}
+            onCopy={() => void copy("pool", coin.graduatedPool!)}
+          />
+        ) : null}
       </Rows>
 
-      <LinkTap onPress={() => Linking.openURL(juno.explorer("account", coin.pool))}>
-        <LinkText>View the pool on Solscan</LinkText>
+      <LinkTap onPress={() => Linking.openURL(explorer("token", coin.address, coin.chainId))}>
+        <LinkText>The token on Arbiscan</LinkText>
         <ExternalGlyph />
       </LinkTap>
-      {launchSignature ? (
-        <LinkTap onPress={() => Linking.openURL(juno.explorer("tx", launchSignature))}>
+      <LinkTap onPress={() => Linking.openURL(explorer("address", coin.pool, coin.chainId))}>
+        <LinkText>The curve contract on Arbiscan</LinkText>
+        <ExternalGlyph />
+      </LinkTap>
+      {launchTxHash ? (
+        <LinkTap onPress={() => Linking.openURL(explorer("tx", launchTxHash, coin.chainId))}>
           <LinkText>The transaction that launched it</LinkText>
           <ExternalGlyph />
         </LinkTap>
@@ -784,48 +828,47 @@ function DetailsTab({
 /**
  * Claim the trading fees this coin has paid its creator.
  *
- * Built on the server, signed on the phone, submitted like a trade, and the
- * receipt — signature and the second it landed — stays on screen.
+ * Built on the server (`claimCreatorFees()` on the curve), sent from the
+ * creator's wallet, and the receipt — hash and the second it landed — stays
+ * on screen.
  */
 function ClaimFees({
-  mint,
-  owner,
+  curve,
+  creator,
   rewards,
   currency,
-  sign,
   onClaimed,
 }: {
-  mint: string;
-  owner: string;
+  curve: string;
+  creator: string;
   rewards: number;
   currency: string;
-  sign: (base64: string) => Promise<string>;
   onClaimed: () => void;
 }) {
+  const wallet = useWallet();
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<{ signature: string; at: Date; amount: string } | null>(null);
+  const [receipt, setReceipt] = useState<{ hash: string; at: Date; amount: string } | null>(null);
 
   async function claim() {
     setState("busy");
     setError(null);
     try {
-      const built = await juno.buildClaim({ mint, owner });
-      const signed = await sign(built.unsigned.transaction);
-      const { signature } = await juno.submit({
-        transaction: signed,
-        window: built.window,
-        poolAddress: built.pool,
-      });
+      const built = await juno.buildClaim({ curve, creator });
+      const sent = await wallet.send(built.steps, { chainId: built.chainId });
       setReceipt({
-        signature,
-        at: new Date(),
-        amount: money(built.amount, built.quoteSymbol, { compact: false }),
+        hash: sent.hashes[sent.hashes.length - 1]!,
+        at: sent.confirmedAt,
+        amount:
+          built.quote.amount !== undefined
+            ? money(built.quote.amount, built.quote.quoteSymbol ?? currency, { compact: false })
+            : money(rewards, currency, { compact: false }),
       });
       setState("done");
       onClaimed();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The claim failed");
+      const failure = describeTxError(caught);
+      setError(failure.cancelled ? null : failure.message || "The claim failed");
       setState("idle");
     }
   }
@@ -834,10 +877,10 @@ function ClaimFees({
     return (
       <ClaimBox>
         <Label style={{ fontWeight: "700" }}>Claimed {receipt.amount} in creator fees</Label>
-        <Tappable onPress={() => void Linking.openURL(juno.explorer("tx", receipt.signature))} to={0.97}>
+        <Tappable onPress={() => void Linking.openURL(explorer("tx", receipt.hash))} to={0.97}>
           <ClaimReceipt>
-            tx {receipt.signature.slice(0, 8)}…{receipt.signature.slice(-8)} ·{" "}
-            {receipt.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            tx {receipt.hash.slice(0, 10)}…{receipt.hash.slice(-8)} ·{" "}
+            {receipt.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · Arbiscan ↗
           </ClaimReceipt>
         </Tappable>
       </ClaimBox>
@@ -856,6 +899,63 @@ function ClaimFees({
         loading={state === "busy"}
         style={{ alignSelf: "stretch" }}
       />
+      {error ? <Caption style={{ color: theme.colors.neg, marginTop: 6 }}>{error}</Caption> : null}
+    </ClaimBox>
+  );
+}
+
+/**
+ * The curve is full: move it to Uniswap.
+ *
+ * `graduate()` is permissionless once the curve has sold its last token, so
+ * anyone on the page can send it. The server usually does it straight after
+ * the filling buy; this button is for when it has not yet.
+ */
+function Graduate({ curve, onGraduated }: { curve: string; onGraduated: () => void }) {
+  const wallet = useWallet();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<{ hash: string; at: Date } | null>(null);
+
+  async function graduate() {
+    setBusy(true);
+    setError(null);
+    try {
+      const caller = wallet.address ?? (await wallet.connect());
+      const built = await juno.buildGraduate({ curve, caller });
+      const sent = await wallet.send(built.steps, { chainId: built.chainId });
+      setReceipt({ hash: sent.hashes[sent.hashes.length - 1]!, at: sent.confirmedAt });
+      onGraduated();
+    } catch (caught) {
+      const failure = describeTxError(caught);
+      setError(failure.cancelled ? null : failure.message || "Graduation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ClaimBox>
+      <Label style={{ fontWeight: "700" }}>Curve is full — graduating to Uniswap.</Label>
+      <Caption style={{ marginTop: 4 }}>
+        Every token on the curve has sold. Graduating moves the rest of the supply and the raise into a
+        Uniswap v3 pool, where trading continues.
+      </Caption>
+      {receipt ? (
+        <Tappable onPress={() => void Linking.openURL(explorer("tx", receipt.hash))} to={0.97}>
+          <ClaimReceipt>
+            tx {receipt.hash.slice(0, 10)}…{receipt.hash.slice(-8)} ·{" "}
+            {receipt.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · Arbiscan ↗
+          </ClaimReceipt>
+        </Tappable>
+      ) : (
+        <Button
+          label={busy ? "Graduating…" : "Graduate to Uniswap"}
+          onPress={() => void graduate()}
+          loading={busy}
+          style={{ alignSelf: "stretch", marginTop: 10 }}
+        />
+      )}
       {error ? <Caption style={{ color: theme.colors.neg, marginTop: 6 }}>{error}</Caption> : null}
     </ClaimBox>
   );
@@ -893,106 +993,61 @@ function DetailRow({
 }
 
 /**
- * Where the curve sits against the underlying.
+ * A stock tracker's band card: the stock, the curve, and the rule between them.
  *
- * Three states, kept distinct because conflating them is the whole problem. An
- * equity feed outside exchange hours shows Friday's close — normal, and labelled
- * as such rather than dressed up as live.
+ * The curve contract reads this same Chainlink feed on every buy. A buy that
+ * would leave the curve more than the band above the stock reverts
+ * (`OutsideBand`); once the feed is older than its max age, every buy reverts
+ * (`MarketClosed`) and the market takes sells only. This card is that rule,
+ * shown before anyone runs into it.
  */
-function NavBand({ nav }: { nav: NavReference }) {
-  const label =
-    nav.tessera?.id ??
-    /^Equity\.[A-Z]+\.([A-Z.]+)\/USD$/.exec(nav.feed)?.[1] ??
-    nav.feed.slice(0, 8);
-  const state =
-    nav.state === "live"
-      ? "Live"
-      : nav.state === "closed"
-        ? "Market closed · last close"
-        : nav.state === "mark"
-          ? "Published mark"
-          : "Stale";
-
-  /*
-   * Three states, not two.
-   *
-   * A curve token costs a hundredth of a cent and a share costs hundreds of
-   * dollars, so the two are only comparable once the token's price is restated
-   * in the reference's units. A pool with no ratio recorded has no deviation —
-   * which is different from being outside the band, and used to render as
-   * "-100.00%, outside" on every tracker in the app.
-   */
-  const measured = nav.deviation !== null && nav.withinBand !== null;
+function NavBand({ nav, feed }: { nav: NavReference; feed: string | null }) {
+  const band = nav.bandBps / 100;
+  const deviation = nav.deviationPct;
+  const inside = deviation === null ? null : Math.abs(deviation) <= band;
 
   return (
     <Card style={{ marginTop: 14 }}>
       <Row justify="space-between">
-        <Label style={{ fontWeight: "700" }}>{label} reference</Label>
-        <Caption
-          style={{
-            color:
-              nav.state === "live"
-                ? theme.colors.pos
-                : nav.state === "stale"
-                  ? theme.colors.neg
-                  : theme.colors.muted,
-          }}
-        >
-          {state}
+        <Label style={{ fontWeight: "700" }}>{nav.symbol} · Chainlink</Label>
+        <Caption style={{ color: nav.marketOpen ? theme.colors.pos : theme.colors.neg, fontWeight: "700" }}>
+          {nav.marketOpen ? "Market open" : "Market closed · sells only"}
         </Caption>
       </Row>
 
-      <Row justify="space-between" align="baseline" style={{ marginTop: 8 }}>
-        <CellValue style={{ fontSize: theme.type.heading.size }}>
-          {money(nav.priceUsd, "USD", { compact: false })}
-        </CellValue>
-        <Mono
-          style={{
-            color: !measured
-              ? theme.colors.muted
-              : nav.withinBand
-                ? theme.colors.pos
-                : theme.colors.neg,
-          }}
-        >
-          {measured ? `${nav.deviation! >= 0 ? "+" : ""}${(nav.deviation! * 100).toFixed(2)}%` : "—"}
-        </Mono>
+      <Row style={{ marginTop: 12 }}>
+        <Stat value={money(nav.price, "USD", { compact: false })} label={`${nav.symbol} price`} />
+        <Stat value={money(nav.curvePrice, "USD", { compact: false })} label="Curve price" />
+        <Stat
+          value={deviation === null ? "—" : `${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}%`}
+          label="Deviation"
+        />
       </Row>
 
-      <Caption style={{ marginTop: 8 }}>
-        {!measured
-          ? `This market names ${label} as its reference but never recorded how much of it one token stands for, so the two prices cannot be compared.`
-          : `This curve implies ${money(nav.impliedUsd!, "USD", { compact: false })} against a ${money(
-              nav.priceUsd,
-              "USD",
-              { compact: false },
-            )} mark — ${nav.withinBand ? "inside" : "outside"} this preset's ${
-              nav.bandBps / 100
-            }% band. ${
-              nav.source === "tessera"
-                ? "Tessera publishes no timestamp with it, so freshness is unknown."
-                : "Read from Pyth on-chain."
-            }`}
+      <Split />
+
+      <Row justify="space-between" align="center">
+        <Caption>Band</Caption>
+        <Mono style={{ color: inside === null ? theme.colors.muted : inside ? theme.colors.pos : theme.colors.neg }}>
+          ±{band}% {inside === null ? "" : inside ? "· inside" : "· outside"}
+        </Mono>
+      </Row>
+      <Row justify="space-between" align="center" style={{ marginTop: 6 }}>
+        <Caption>Price updated</Caption>
+        <Mono muted>{age(nav.ageSeconds)} ago</Mono>
+      </Row>
+
+      <Caption style={{ marginTop: 10 }}>
+        {nav.marketOpen
+          ? `The curve contract checks ${nav.symbol}'s Chainlink price on every buy and refuses one that would take the curve more than ${band}% above it. Sells are never blocked.`
+          : `${nav.symbol}'s Chainlink price is stale — the exchange is closed — so the contract refuses buys until it updates. You can still sell.`}
       </Caption>
 
-      {/* What Tessera carries and an oracle does not: a company behind the
-          mark, and the reason its token cannot be the other side of a Juno
-          curve — read from the mint, not copied from a whitepaper. */}
-      {nav.tessera ? (
-        <>
-          <Split />
-          <Row>
-            <Stat value={String(nav.tessera.holders)} label="T-token holders" />
-            <Stat
-              value={bigMoney(nav.tessera.markValuation)}
-              label="Implied valuation"
-            />
-            <Stat value={nav.tessera.sector} label="Sector" />
-          </Row>
-          {nav.tessera.blocked ? (
-            <Caption style={{ marginTop: 12 }}>{nav.tessera.blocked}</Caption>
-          ) : null}
-        </>
+      {feed ? (
+        <LinkTap onPress={() => Linking.openURL(explorer("address", feed))}>
+          <LinkText>The {nav.symbol} feed on Arbiscan</LinkText>
+          <ExternalGlyph />
+        </LinkTap>
       ) : null}
     </Card>
   );

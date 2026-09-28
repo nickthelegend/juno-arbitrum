@@ -52,9 +52,9 @@ export function rememberName(wallet: string, name: string) {
   publish(wallet, name);
 }
 
-/** The short form of an address, for anyone without a name. */
+/** The short form of an address, for anyone without a name: "0x12ab…9f3c". */
 export function shortAddress(wallet: string): string {
-  return `${wallet.slice(0, 4)}…${wallet.slice(-4)}`;
+  return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
 }
 
 /** This wallet's name, or null while unknown or when it has none. */

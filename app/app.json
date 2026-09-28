@@ -1,14 +1,14 @@
 {
   "expo": {
     "name": "Juno",
-    "slug": "juno",
-    "version": "1.1.0",
+    "slug": "juno-arbitrum",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.launch.juno"
+      "bundleIdentifier": "app.launch.junoarb"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,8 +18,8 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "app.launch.juno",
-      "versionCode": 110
+      "package": "app.launch.junoarb",
+      "versionCode": 200
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -38,8 +38,8 @@
       ],
       "./plugins/withQuotedBundleScript"
     ],
-    "scheme": "juno",
+    "scheme": "junoarb",
     "backgroundColor": "#D3E3CB",
-    "description": "Every post is a market: photos and reels launch their own Meteora bonding curves on Solana."
+    "description": "Every post is a market: photos and reels launch their own bonding curves on Arbitrum, and stock trackers are held to Chainlink prices on-chain."
   }
 }

@@ -1,34 +1,43 @@
 {
   "cli": {
     "version": ">= 16.0.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_CHAIN_ID": "421614"
+      }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://juno-web-production-bd2e.up.railway.app",
-        "EXPO_PUBLIC_APP_URL": "https://juno-app-chi.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://SET-AT-DEPLOY.example",
+        "EXPO_PUBLIC_CHAIN_ID": "421614"
       },
-      "android": { "buildType": "apk" },
-      "ios": { "simulator": false }
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false
+      }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://juno-web-production-bd2e.up.railway.app",
-        "EXPO_PUBLIC_APP_URL": "https://juno-app-chi.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://SET-AT-DEPLOY.example",
+        "EXPO_PUBLIC_CHAIN_ID": "421614"
       }
     }
   },
   "submit": {
     "production": {
       "ios": {},
-      "android": { "track": "internal" }
+      "android": {
+        "track": "internal"
+      }
     }
   }
 }

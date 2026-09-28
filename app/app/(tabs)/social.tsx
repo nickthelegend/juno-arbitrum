@@ -27,13 +27,13 @@ import { theme } from "../../theme";
  * both, which asked the reader to decide what kind of thing they wanted
  * before showing them anything — and made the trade ledger, the least
  * social thing in the app, the default view of a social app. Now each entry
- * is a post someone launched on a Dynamic Bonding Curve, shown as the post,
+ * is a post someone launched on its own bonding curve, shown as the post,
  * with its market folded into the row beneath it.
  *
  * Trades did not disappear; they became evidence. The swap record is what
  * "Bought by" is read from, and what a creator wrote about their coin becomes
- * its caption. Pre-IPO trackers and stock issuances are markets rather than
- * posts, so they live on the Trade tab.
+ * its caption. Stock trackers are markets rather than posts, so they live on
+ * the Trade tab.
  *
  * The strip at the top is the reels, as rings — the way into the full-screen
  * player, landing on the one you tapped.
@@ -154,7 +154,15 @@ export default function SocialScreen() {
         ) : null}
       </View>
 
-      {markets.loading || markets.data === null ? (
+      {/* An error first: a failed read also leaves `data` null, and checking
+          for null first kept a dead API on the skeleton forever. */}
+      {markets.error && !markets.loading ? (
+        <Placeholder
+          title="Could not load the feed"
+          detail={markets.error}
+          action={<Button label="Try again" onPress={refresh} />}
+        />
+      ) : markets.loading || markets.data === null ? (
         <ScrollView contentContainerStyle={{ paddingBottom: 130 }}>
           <View style={styles.rings}>
             {[0, 1, 2, 3].map((i) => (
@@ -221,7 +229,7 @@ export default function SocialScreen() {
               {/* Markets, not posts: an unpriced row cannot be sorted into a
                   post or a stock, so the count covers both. */}
               {markets.data!.missing} more {markets.data!.missing === 1 ? "market is" : "markets are"}{" "}
-              live but could not be priced — the RPC is rate-limiting. Pull to retry.
+              live but could not be priced just now. Pull to retry.
             </Text>
           ) : null}
 

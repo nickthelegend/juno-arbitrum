@@ -4,7 +4,8 @@ import { Linking, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { Tappable } from "./Press";
 import { Button } from "./kit";
-import { api, juno, USDC_DEVNET, WSOL_MINT } from "../lib/api";
+import { api, FaucetLimited, juno } from "../lib/api";
+import { displayAddress, explorer, IS_TESTNET, NETWORK_NAME } from "../lib/chain";
 import { rememberName, useName } from "../lib/names";
 import { useWallet } from "../lib/wallet";
 import { useApi } from "../lib/useApi";
@@ -13,23 +14,24 @@ import { theme } from "../theme";
 /**
  * The wallet itself: its address, what it holds, and how to fund it.
  *
- * The profile used to show a shortened address and nothing else — no way to
- * copy it, no balance, no way to get the devnet SOL every action costs. A new
- * user could browse everything and do nothing, with no hint as to why.
+ * A new user could browse everything and do nothing, with no hint as to why:
+ * every action costs gas. So the card shows the ETH and USDC balances, and on
+ * Arbitrum Sepolia a faucet button that sends test ETH (and Juno's test USDC,
+ * which stock trackers are priced in).
  *
  * Balances are read from chain and shown as a dash when the read fails, never
- * as zero: "0 SOL" on a throttled read would tell someone to go and fund a
+ * as zero: "0 ETH" on a throttled read would tell someone to go and fund a
  * wallet that is already funded.
  */
 export function WalletCard({ address }: { address: string }) {
-  const sol = useApi(() => juno.balance(address, WSOL_MINT), [address]);
-  const usdc = useApi(() => juno.balance(address, USDC_DEVNET), [address]);
+  const balances = useApi(() => juno.balances(address), [address]);
   const [copied, setCopied] = useState(false);
   const [funding, setFunding] = useState(false);
   const [message, setMessage] = useState<{ tone: "pos" | "neg"; text: string; url?: string } | null>(null);
+  const shown = displayAddress(address);
 
   const copy = async () => {
-    await Clipboard.setStringAsync(address);
+    await Clipboard.setStringAsync(shown);
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
   };
@@ -39,69 +41,91 @@ export function WalletCard({ address }: { address: string }) {
     setMessage(null);
     try {
       const result = await juno.faucet(address);
-      setMessage({ tone: "pos", text: `${result.amount} devnet SOL received.` });
-      sol.refresh();
+      setMessage({
+        tone: "pos",
+        text: result.usdc ? "Test ETH and test USDC are on their way." : "Test ETH is on its way.",
+        url: explorer("tx", result.eth),
+      });
+      // The faucet answers once its transfer is sent; the balance follows a
+      // block later, so read it again after one.
+      balances.refresh();
+      setTimeout(() => balances.refresh(), 2500);
     } catch (error) {
-      const text = error instanceof Error ? error.message : "The faucet did not answer.";
       setMessage({
         tone: "neg",
-        text,
-        url: /faucet\.solana\.com/.test(text) ? "https://faucet.solana.com" : undefined,
+        text:
+          error instanceof FaucetLimited
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "The faucet did not answer.",
       });
     } finally {
       setFunding(false);
     }
   };
 
-  const figure = (state: typeof sol) =>
-    state.loading ? "…" : state.data?.balance === null || state.data === null || state.error ? "—" : state.data.balance.toFixed(state.data.balance < 1 ? 4 : 2);
+  const figure = (value: number | null | undefined) =>
+    balances.loading
+      ? "…"
+      : value === null || value === undefined || balances.error
+        ? "—"
+        : value.toFixed(value === 0 ? 2 : value < 1 ? 4 : 2);
 
-  const empty = sol.data?.balance === 0;
+  const empty = balances.data?.eth === 0;
 
   return (
     <View style={styles.card}>
       <NameEditor address={address} />
       <View style={styles.head}>
-        <Text style={styles.label}>Wallet · devnet</Text>
+        <Text style={styles.label}>Wallet · {NETWORK_NAME}</Text>
         <Tappable onPress={() => void copy()} to={0.95} accessibilityRole="button" accessibilityLabel="Copy address">
           <View style={styles.copy}>
             <Text style={styles.copyText}>{copied ? "Copied" : "Copy address"}</Text>
           </View>
         </Tappable>
       </View>
-      <Text style={styles.address} selectable numberOfLines={1} ellipsizeMode="middle">
-        {address}
+      <Text
+        style={styles.address}
+        selectable
+        numberOfLines={1}
+        ellipsizeMode="middle"
+        onPress={() => void Linking.openURL(explorer("address", address))}
+      >
+        {shown}
       </Text>
 
       <View style={styles.balances}>
         <View style={styles.balance}>
-          <Text style={styles.amount}>{figure(sol)}</Text>
-          <Text style={styles.unit}>SOL</Text>
+          <Text style={styles.amount}>{figure(balances.data?.eth)}</Text>
+          <Text style={styles.unit}>ETH</Text>
         </View>
         <View style={styles.rule} />
         <View style={styles.balance}>
-          <Text style={styles.amount}>{figure(usdc)}</Text>
+          <Text style={styles.amount}>{figure(balances.data?.usdc)}</Text>
           <Text style={styles.unit}>USDC</Text>
         </View>
       </View>
 
       {empty ? (
-        <Text style={styles.hint}>Every buy and launch costs a network fee. Fund this wallet to start.</Text>
+        <Text style={styles.hint}>Every buy and launch costs a little gas. Fund this wallet to start.</Text>
       ) : null}
 
-      <Button
-        label={funding ? "Asking the faucet…" : "Get devnet SOL"}
-        variant={empty ? "lime" : "quiet"}
-        loading={funding}
-        onPress={() => void fund()}
-      />
+      {IS_TESTNET ? (
+        <Button
+          label={funding ? "Asking the faucet…" : "Get test ETH"}
+          variant={empty ? "lime" : "quiet"}
+          loading={funding}
+          onPress={() => void fund()}
+        />
+      ) : null}
 
       {message ? (
         <Text style={[styles.message, { color: message.tone === "pos" ? theme.colors.pos : theme.colors.neg }]}>
           {message.text}
           {message.url ? (
             <Text style={styles.link} onPress={() => void Linking.openURL(message.url!)}>
-              {"  "}Open faucet
+              {"  "}View on Arbiscan
             </Text>
           ) : null}
         </Text>
@@ -172,11 +196,12 @@ function NameEditor({ address }: { address: string }) {
     setError(null);
     try {
       const issuedAt = new Date().toISOString();
-      // Exactly the text the server rebuilds and verifies — see lib/juno/profiles.ts.
-      const message = `Juno name: ${cleaned}\nWallet: ${address}\nIssued: ${issuedAt}`;
+      // Exactly the text the server rebuilds and checks with `verifyMessage`
+      // (docs/API.md): the wallet lowercase, signed with EIP-191 personal_sign.
+      const message = `Juno name: ${cleaned}\nWallet: ${address.toLowerCase()}\nIssued: ${issuedAt}`;
       const signature = await wallet.signMessage(message);
       const result = await api.post<{ name: string }>("/api/juno/profiles", {
-        wallet: address,
+        wallet: address.toLowerCase(),
         name: cleaned,
         issuedAt,
         signature,
@@ -184,6 +209,8 @@ function NameEditor({ address }: { address: string }) {
       rememberName(address, result.name);
       setEditing(false);
     } catch (caught) {
+      // Declined in the wallet: nothing to say.
+      if ((caught as { cancelled?: boolean } | null)?.cancelled) return;
       setError(caught instanceof Error ? caught.message : "That name could not be saved");
     } finally {
       setSaving(false);

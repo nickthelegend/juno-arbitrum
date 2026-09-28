@@ -3,30 +3,18 @@ import { juno, type Coin } from "./api";
 /**
  * Which of Juno's two products a coin belongs to.
  *
- * - **post** — someone's photo or reel, launched as a meme on a DBC curve.
+ * - **post** — someone's photo or reel, launched as a coin on its own curve.
  *   These are the feed and the reels.
- * - **preipo** — a curve marked against a Tessera T-token: a company that has
- *   not listed. These are the Trade tab.
- * - **stock** — a curve marked against a Pyth equity feed. Also Trade.
+ * - **stock** — a tracker: a curve held to a stock's Chainlink price. These
+ *   are the Trade tab's Stocks list.
  *
- * The server says so in `reference`, read from the registry row. A server
- * that predates that field sends nothing, and for that case the Tessera
- * endpoint's own list of markets is the authority on pre-IPO — it is the same
- * registry column, read a different way — and anything else marked against a
- * reference was launched as an "Issuance", which is what the launcher names
- * every equity-preset coin. Once the deployed API carries `reference`, the
- * fallback never runs.
+ * The server says so in `reference`: a Chainlink feed for a tracker, null for
+ * a post or reel.
  */
-export type MarketKind = "post" | "preipo" | "stock";
+export type MarketKind = "post" | "stock";
 
-export function marketKind(coin: Coin, tesseraMarkets?: ReadonlySet<string>): MarketKind {
-  if (coin.reference !== undefined) {
-    if (coin.reference === null) return "post";
-    return coin.reference.source === "tessera" ? "preipo" : "stock";
-  }
-  if (tesseraMarkets?.has(coin.address)) return "preipo";
-  if (/\bIssuance$/.test(coin.name)) return "stock";
-  return "post";
+export function marketKind(coin: Coin): MarketKind {
+  return coin.reference ? "stock" : "post";
 }
 
 /** A web link to a coin, for the share sheet. The Next app serves the same market. */
@@ -56,13 +44,10 @@ export function bigMoney(value: number | null | undefined): string {
 /**
  * Every coin, sorted into Juno's two products in one read.
  *
- * The Tessera list is fetched only when the server did not say which coins
- * are pre-IPO — see `marketKind` — so a current server costs one request.
- *
  * ## Shared for a minute
  *
- * The feed, the reels and the Trade tab all want this same list, and it walks
- * every pool against a rate-limited RPC. Read separately, moving between tabs
+ * The feed, the reels and the Trade tab all want this same list, and pricing
+ * it reads every curve. Read separately, moving between tabs
  * cost the whole walk each time. One in-flight or recent read is shared
  * instead; pull-to-refresh calls `invalidateMarkets()` first, so a deliberate
  * refresh is always a fresh read.
@@ -95,15 +80,9 @@ export function loadMarkets(viewer?: string | null) {
 
 async function readMarkets(viewer?: string | null) {
   const { coins, missing } = await juno.coins(undefined, { social: true, viewer, nav: true });
-  const needsTessera = coins.some((coin) => coin.reference === undefined);
-  const tessera = needsTessera ? await juno.tessera().catch(() => null) : null;
-  const tesseraMarkets = new Set(
-    (tessera?.tokens ?? []).flatMap((token) => token.markets.map((market) => market.address)),
-  );
-  const sorted = { posts: [] as Coin[], preipo: [] as Coin[], stocks: [] as Coin[] };
+  const sorted = { posts: [] as Coin[], stocks: [] as Coin[] };
   for (const coin of coins) {
-    const kind = marketKind(coin, tesseraMarkets);
-    (kind === "post" ? sorted.posts : kind === "preipo" ? sorted.preipo : sorted.stocks).push(coin);
+    (marketKind(coin) === "post" ? sorted.posts : sorted.stocks).push(coin);
   }
   return { ...sorted, missing };
 }

@@ -18,7 +18,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CurvePreview } from "../../components/CurvePreview";
 import { Button, Card, Pill } from "../../components/kit";
-import { juno, WSOL_MINT } from "../../lib/api";
+import { juno, type LaunchPreset } from "../../lib/api";
+import { describeTxError, explorer, NETWORK_NAME } from "../../lib/chain";
 import { feedChanged } from "../../lib/refresh";
 import { useTabBarHeight } from "../../lib/tabbar";
 import { useWallet } from "../../lib/wallet";
@@ -28,21 +29,18 @@ import { theme } from "../../theme";
  * Post — which here means launching a real market.
  *
  * This is Juno's whole claim in one screen. Publishing does not create a row in
- * a table; it creates a Meteora bonding curve pool on Solana, with a sixteen
- * segment curve chosen from a preset, and the post *is* that market.
+ * a table; it calls `JunoFactory.launch` on Arbitrum, which deploys the post's
+ * own ERC-20 and bonding curve in one transaction. The curve's sixteen
+ * segments come from the chosen preset and are priced by Juno's Stylus
+ * (Rust) maths contract. The post *is* that market.
  *
- * ## Two signatures, and why it cannot be one
+ * ## One transaction, then the listing
  *
- * A launch is two transactions: create the curve config, then open the pool
- * against it. They cannot be bundled — a sixteen-segment curve plus the pool
- * init serialises to about 1488 bytes against Solana's 1232 byte packet limit,
- * and dropping curve points to fit would gut the exact thing that makes these
- * presets worth anything.
- *
- * So the second signature can fail after the first has landed, leaving a config
- * on-chain with no pool. That is a real state and the screen says so plainly
- * rather than reporting a generic failure, because the config is not lost — it
- * is a usable account, and the retry is cheap.
+ * The media and the token metadata are pinned to IPFS first, then the launch
+ * is one signature. The receipt's `Launched` event names the token and the
+ * curve; `tx/record` hands the hash to the server, which reads the same event
+ * and lists the coin. If that last call fails, the coin is still live on-chain,
+ * and the screen says so and offers to retry without signing again.
  */
 
 const PRESETS = [
@@ -61,12 +59,7 @@ const PRESETS = [
     label: "IPO book",
     blurb: "Deep at both ends, thin in the middle. Book-building.",
   },
-  {
-    id: "tight-nav",
-    label: "Tight NAV",
-    blurb: "Uniform. Tracks an underlying like a spread, not a launch.",
-  },
-] as const;
+] as const satisfies ReadonlyArray<{ id: LaunchPreset; label: string; blurb: string }>;
 
 export default function PostScreen() {
   const router = useRouter();
@@ -85,14 +78,14 @@ export default function PostScreen() {
   const [media, setMedia] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [caption, setCaption] = useState("");
   /** A launch that confirmed on-chain but could not be listed yet — kept so listing can be retried. */
-  const [unlisted, setUnlisted] = useState<Parameters<typeof juno.recordLaunch>[0] | null>(null);
+  const [unlisted, setUnlisted] = useState<{ txHash: string; chainId: number; token: string | null } | null>(null);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
-  const [preset, setPreset] = useState<string>("content");
+  const [preset, setPreset] = useState<LaunchPreset>("content");
   const [status, setStatus] = useState<string | null>(null);
   /**
    * What has actually happened, as it happens: each step with its receipt —
-   * an IPFS address or a transaction signature — and the time it landed.
+   * an IPFS address, a transaction hash, a contract — and the time it landed.
    * Shown while the launch runs, so the chain's answers are on screen rather
    * than a spinner that says "trust me".
    */
@@ -161,47 +154,45 @@ export default function PostScreen() {
     }
   }
 
-  /** Index a confirmed launch. Throws with a reason the screen can show. */
-  async function list(record: Parameters<typeof juno.recordLaunch>[0]) {
-    setStatus("Listing it on Juno…");
-    try {
-      await juno.recordLaunch(record);
-      setUnlisted(null);
-      note({ label: "Listed on Juno", receipt: record.baseMint });
-      setStatus("Live");
-      feedChanged();
-      // A beat on the finished log: every receipt is on screen at once, which
-      // is the proof, before the coin page replaces it.
-      await new Promise((resolve) => setTimeout(resolve, 3500));
-      setStatus(null);
-      // A blank composer for the next one. The tab stays mounted, so coming
-      // back to it showed the last post filled in — one tap from launching a
-      // duplicate coin.
-      setMedia(null);
-      setName("");
-      setSymbol("");
-      setCaption("");
-      setPreset("content");
-      router.push(`/coin/${record.baseMint}`);
-    } catch (caught) {
-      setUnlisted(record);
-      setStatus(null);
-      throw new Error(
-        `Your coin is live on-chain, but Juno could not list it yet: ${
-          caught instanceof Error ? caught.message : "unknown error"
-        }. Tap "Retry listing" — nothing needs signing again.`,
-      );
-    }
+  /** Clear the composer and open the new coin, after a beat on the finished log. */
+  async function finish(token: string) {
+    setUnlisted(null);
+    setStatus("Live");
+    feedChanged();
+    // A beat on the finished log: every receipt is on screen at once, which
+    // is the proof, before the coin page replaces it.
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    setStatus(null);
+    // A blank composer for the next one. The tab stays mounted, so coming
+    // back to it showed the last post filled in — one tap from launching a
+    // duplicate coin.
+    setMedia(null);
+    setName("");
+    setSymbol("");
+    setCaption("");
+    setPreset("content");
+    router.push(`/coin/${token}`);
   }
 
+  /** Ask the server to list a launch that landed but was not recorded. Nothing is signed again. */
   async function retryListing() {
     if (!unlisted) return;
     setBusy(true);
     setError(null);
+    setStatus("Listing it on Juno…");
     try {
-      await list(unlisted);
+      const record = await juno.recordTx({ chainId: unlisted.chainId, txHash: unlisted.txHash });
+      const token = record.launched?.token ?? unlisted.token;
+      if (!token) throw new Error("The server found no launch in that transaction yet. Try again in a moment.");
+      note({ label: "Listed on Juno", receipt: token, kind: "address" });
+      await finish(token.toLowerCase());
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Listing failed");
+      setStatus(null);
+      setError(
+        `Your coin is live on-chain, but Juno could not list it yet: ${
+          caught instanceof Error ? caught.message : "unknown error"
+        }. Tap "Retry listing" — nothing needs signing again.`,
+      );
     } finally {
       setBusy(false);
     }
@@ -232,9 +223,14 @@ export default function PostScreen() {
         symbol: symbol.trim().toUpperCase(),
         description: caption.trim() || undefined,
         curvePreset: preset,
+        format: kind,
         // Wallets and explorers want a still; a reel's is its poster.
         imageUrl: uploaded.posterUrl ?? uploaded.url,
         mimeType: uploaded.posterUrl ? "image/jpeg" : uploaded.mimeType,
+        mediaUrl: uploaded.uri,
+        mediaMime: uploaded.mimeType,
+        width: uploaded.width,
+        height: uploaded.height,
       });
 
       note({ label: "Token metadata pinned", receipt: metadata.uri });
@@ -244,67 +240,47 @@ export default function PostScreen() {
         creator: address,
         name: name.trim(),
         symbol: symbol.trim().toUpperCase(),
+        metadataUri: metadata.uri,
+        format: kind,
         preset,
-        uri: metadata.uri,
       });
 
-      // In order, and each must confirm before the next is valid: the pool
-      // cannot be opened against a config that does not exist yet.
-      let poolSignature = "";
-      for (const [index, step] of built.steps.entries()) {
-        setStatus(`${step.label}… (${index + 1}/${built.steps.length})`);
-        const signed = await wallet.sign(step.transaction);
-        try {
-          const { signature } = await juno.submit({
-            transaction: signed,
-            window: built.window,
-          });
-          // The last step opens the pool, and its signature is the receipt a
-          // judge clicks.
-          poolSignature = signature;
-          note({
-            label: index === 0 ? "Curve config created" : "Pool opened on Meteora",
-            receipt: signature,
-            tx: true,
-          });
-        } catch (stepError) {
-          if (index > 0) {
-            throw new Error(
-              `The curve config was created, but opening the pool failed: ${
-                stepError instanceof Error ? stepError.message : "unknown error"
-              }. Nothing is lost — try again.`,
-            );
-          }
-          throw stepError;
-        }
+      const sent = await wallet.send(built.steps, {
+        chainId: built.chainId,
+        onProgress: (at) =>
+          setStatus(
+            at.phase === "signing"
+              ? `${at.label}: confirm in your wallet…`
+              : at.phase === "confirming"
+                ? `${at.label}: waiting for ${NETWORK_NAME}…`
+                : at.phase === "checking"
+                  ? `${at.label}: checking…`
+                  : `${at.label}: confirmed`,
+          ),
+      });
+      const launchHash = sent.hashes[sent.hashes.length - 1]!;
+      note({ label: "Launch transaction confirmed", receipt: launchHash, kind: "tx" });
+
+      if (sent.launched) {
+        note({ label: "Curve deployed", receipt: sent.launched.curve, kind: "address" });
       }
 
       /*
-       * The pool exists on-chain from here on. Listing it used to fail
-       * silently, which left a creator with a live market that appeared
-       * nowhere in the app and no idea why. Now a failure says so and keeps
-       * everything needed to retry without signing again.
+       * The coin exists on-chain from here on. If the server did not record
+       * it, say so and keep what is needed to retry without signing again.
        */
-      await list({
-        baseMint: built.baseMint,
-        poolAddress: built.pool,
-        configAddress: built.config,
-        quoteMint: WSOL_MINT,
-        creatorWallet: address,
-        name: name.trim(),
-        symbol: symbol.trim().toUpperCase(),
-        format: kind,
-        curvePreset: preset,
-        createSignature: poolSignature,
-        description: caption.trim() || null,
-        mediaUrl: uploaded.uri,
-        posterUrl: uploaded.posterUri ?? uploaded.uri,
-        mediaMime: uploaded.mimeType,
-        mediaWidth: uploaded.width,
-        mediaHeight: uploaded.height,
-      });
+      if (!sent.record || !sent.record.launched || !sent.launched) {
+        setUnlisted({ txHash: launchHash, chainId: built.chainId, token: sent.launched?.token ?? null });
+        setStatus(null);
+        throw new Error(
+          `Your coin is live on-chain, but Juno could not list it yet. Tap "Retry listing" — nothing needs signing again.`,
+        );
+      }
+      note({ label: "Listed on Juno", receipt: sent.launched.token, kind: "address" });
+      await finish(sent.launched.token);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Launch failed");
+      const failure = describeTxError(caught);
+      setError(failure.cancelled ? null : failure.message || "Launch failed");
       setStatus(null);
     } finally {
       setBusy(false);
@@ -327,8 +303,8 @@ export default function PostScreen() {
           </Text>
           <Text style={styles.lede}>
             {kind === "reel"
-              ? "A vertical video with a real Meteora bonding curve behind it. It lands in the swipe feed."
-              : "Publishing opens a real Meteora bonding curve on Solana. The post is the market."}
+              ? "A vertical video with its own bonding curve on Arbitrum behind it. It lands in the swipe feed."
+              : "Publishing deploys this post's own token and bonding curve on Arbitrum. The post is the market."}
           </Text>
 
           <MediaPicker kind={kind} media={media} onPick={pick} disabled={busy} />
@@ -375,8 +351,8 @@ export default function PostScreen() {
 
           <Text style={styles.sectionTitle}>Curve</Text>
           <Text style={styles.sectionLede}>
-            Sixteen liquidity-weighted segments. The weights decide how the price
-            behaves, not just where it starts.
+            Sixteen liquidity-weighted segments, priced on-chain by Juno&apos;s Stylus
+            maths. The weights decide how the price behaves, not just where it starts.
           </Text>
 
           <View style={styles.presets}>
@@ -426,9 +402,9 @@ export default function PostScreen() {
           {!busy && !unlisted && missing ? <Text style={styles.missing}>{missing}</Text> : null}
           {busy && status ? <Text style={styles.missing}>{status}</Text> : null}
           <Text style={styles.footnote}>
-            Two signatures: one to create the curve config, one to open the pool.
-            They cannot be combined — a sixteen-segment curve does not fit in a
-            single Solana packet with the pool init.
+            One signature. The factory deploys the token and its curve together, and the
+            creator earns a share of every trade&apos;s fee. When the curve fills it
+            graduates into a Uniswap v3 pool.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -526,7 +502,7 @@ function Field({
 
 const MONO = Platform.select({ ios: "Menlo", default: "monospace" });
 
-type LogEntry = { label: string; receipt: string; tx?: boolean; at: Date };
+type LogEntry = { label: string; receipt: string; kind?: "tx" | "address"; at: Date };
 
 function shorten(value: string): string {
   const bare = value.replace(/^ipfs:\/\//, "");
@@ -540,16 +516,16 @@ function LaunchLog({ entries }: { entries: LogEntry[] }) {
       {entries.map((entry, index) => (
         <Pressable
           key={`${entry.label}-${index}`}
-          disabled={!entry.tx}
-          onPress={() => void Linking.openURL(juno.explorer("tx", entry.receipt))}
+          disabled={!entry.kind}
+          onPress={() => (entry.kind ? void Linking.openURL(explorer(entry.kind, entry.receipt)) : undefined)}
           style={styles.logRow}
-          accessibilityRole={entry.tx ? "link" : undefined}
+          accessibilityRole={entry.kind ? "link" : undefined}
         >
           <Text style={styles.logTick}>✓</Text>
           <View style={{ flex: 1 }}>
             <Text style={styles.logLabel}>{entry.label}</Text>
             <Text style={styles.logReceipt} numberOfLines={1}>
-              {entry.tx ? "tx " : entry.receipt.startsWith("ipfs://") ? "ipfs " : ""}
+              {entry.kind === "tx" ? "tx " : entry.receipt.startsWith("ipfs://") ? "ipfs " : ""}
               {shorten(entry.receipt)}
             </Text>
           </View>

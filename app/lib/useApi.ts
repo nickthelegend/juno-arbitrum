@@ -92,4 +92,4 @@ export function useApi<T>(
  * The formatters themselves live in `./format`, which imports nothing — see
  * the note there.
  */
-export { money, since, tokens } from "./format";
+export { age, money, since, tokens } from "./format";

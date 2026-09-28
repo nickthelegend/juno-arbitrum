@@ -8,20 +8,26 @@ import type { PrivyBridge } from "../lib/privy.types";
 import { theme } from "../theme";
 
 /**
- * Sign in with email; Privy makes the Solana wallet.
+ * Sign in with email; Privy makes the wallet.
  *
  * Three steps in one sheet: an email address, the six-digit code Privy sends
- * to it, then a short wait while the embedded wallet is created. The wallet
- * provider closes the sheet once an address exists, so this component never
- * has to know what the caller was trying to do.
+ * to it, then a short wait while the embedded Ethereum wallet is created. The
+ * wallet provider closes the sheet once an address exists, so this component
+ * never has to know what the caller was trying to do.
+ *
+ * In a browser there is a second door: Privy's own modal, which also offers
+ * MetaMask and other browser wallets. The sheet steps aside for it.
  */
 export function SignInSheet({
   visible,
   onClose,
+  onHandOff,
   privy,
 }: {
   visible: boolean;
   onClose: () => void;
+  /** Called when Privy's own modal takes over the sign-in. */
+  onHandOff: () => void;
   privy: PrivyBridge;
 }) {
   const [email, setEmail] = useState("");
@@ -73,9 +79,9 @@ export function SignInSheet({
         <Title>{creating ? "Creating your wallet" : "Sign in to Juno"}</Title>
         <Body muted>
           {creating
-            ? "Privy is making a Solana wallet for this account."
+            ? `Privy is making an Arbitrum wallet for this account.`
             : step === "email"
-              ? "Privy creates a Solana wallet for you. No seed phrase, nothing to install."
+              ? "Privy creates an Arbitrum wallet for you. No seed phrase, nothing to install."
               : `Enter the six-digit code sent to ${email.trim()}.`}
         </Body>
 
@@ -111,6 +117,17 @@ export function SignInSheet({
               />
             </Field>
             <Button label="Send code" onPress={() => void sendCode()} loading={busy} disabled={!validEmail} tall />
+            {privy.openModal ? (
+              <Button
+                label="Use a browser wallet"
+                variant="quiet"
+                onPress={() => {
+                  onHandOff();
+                  privy.openModal?.();
+                }}
+                disabled={busy}
+              />
+            ) : null}
           </>
         ) : (
           <>
@@ -136,6 +153,7 @@ export function SignInSheet({
         )}
 
         {error ? <ErrorText>{error}</ErrorText> : null}
+        {privy.status === "loading" && !creating ? <Caption>Connecting to Privy…</Caption> : null}
         <Secured>Secured by Privy</Secured>
       </Sheet>
     </BottomSheet>

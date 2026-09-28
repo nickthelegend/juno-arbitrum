@@ -25,14 +25,14 @@ import { theme } from "../theme";
  * a delegate or a session key with spending authority, which this project does
  * not have and will not pretend to: the plan says when it is due, and the buy
  * is the same device-signed transaction as any other buy. `contributed` moves
- * only after a signature lands, so the progress bar is a record of
+ * only after a receipt lands, so the progress bar is a record of
  * transactions rather than of intentions.
  *
  * ## Units
  *
- * Plan amounts are quote-token units — SOL or USDC — because that is what the
+ * Plan amounts are quote-token units — ETH or USDC — because that is what the
  * transaction is denominated in. They are labelled with the quote symbol
- * everywhere, and converted to dollars only where a Pyth rate exists to
+ * everywhere, and converted to dollars only where a price feed gives a rate to
  * convert them with.
  */
 

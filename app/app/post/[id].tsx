@@ -15,7 +15,7 @@ import { theme } from "../../theme";
 /**
  * A post and its conversation.
  *
- * A reply is a post with a parent — same author, body and cluster scoping — so
+ * A reply is a post with a parent — same author, body and chain scoping — so
  * this screen and the feed render the same shape and there is no second schema
  * to keep in step.
  *

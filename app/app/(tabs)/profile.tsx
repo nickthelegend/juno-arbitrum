@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { Platform, RefreshControl, ScrollView } from "react-native";
+import { Linking, RefreshControl, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import styled from "styled-components/native";
 
@@ -35,7 +35,7 @@ import {
 import { juno, type Plan, type WatchItem } from "../../lib/api";
 import { useLinkedState } from "../../lib/linked";
 import { money, tokens, useApi } from "../../lib/useApi";
-import { PRIVY_ENABLED } from "../../lib/privy";
+import { explorer, NETWORK_LABEL, NETWORK_NAME } from "../../lib/chain";
 import { useWallet } from "../../lib/wallet";
 import { theme } from "../../theme";
 
@@ -146,18 +146,14 @@ export default function ProfileScreen() {
       <Page edges={["top"]}>
         <Placeholder
           title="No wallet yet"
-          detail={
-            PRIVY_ENABLED
-              ? "Sign in with your email. Privy creates a Solana wallet for you, with no seed phrase."
-              : "Create one to trade and to launch your own coins. No sign-up."
-          }
+          detail={`Sign in with your email. Privy creates an Arbitrum wallet for you, with no seed phrase. ${NETWORK_LABEL}.`}
           action={
             // Not `.then(portfolio.refresh)`: that refresh was captured before
             // the wallet existed, re-ran the read with no address, and its
             // null landed last — "Holdings could not be read" on a wallet
             // created a second ago. The address change re-reads on its own.
             <Button
-              label={PRIVY_ENABLED ? "Continue with email" : "Create wallet"}
+              label="Sign in"
               onPress={() => void wallet.connect().catch(() => undefined)}
             />
           }
@@ -186,7 +182,7 @@ export default function ProfileScreen() {
           <Heading>
             <Handle wallet={wallet.address} />
           </Heading>
-          <Caption>{wallet.mode === "local" ? "Device key · devnet" : "Privy wallet · devnet"}</Caption>
+          <Caption>Privy wallet · {NETWORK_NAME}</Caption>
         </Identity>
 
         <WalletCard address={wallet.address} />
@@ -366,10 +362,22 @@ export default function ProfileScreen() {
         ) : (
           <Card>
             <Body muted>
-              {Platform.OS === "web"
-                ? "This wallet lives in this browser's storage and signs here. It is a devnet key and is not recoverable — clearing site data deletes it, and Juno never sees it."
-                : "This wallet lives in the device keychain and signs on-device. It is a devnet key and is not recoverable — Juno never sees it."}
+              This is a Privy wallet on {NETWORK_NAME}. Privy holds the key and signs only when you
+              ask, so the wallet follows your email to a new phone or browser — Juno never sees it.
+              {NETWORK_NAME === "Arbitrum One" ? "" : " Everything here is test ETH and test USDC: no real money."}
             </Body>
+            <Button
+              label="View this wallet on Arbiscan"
+              variant="quiet"
+              onPress={() => void Linking.openURL(explorer("address", wallet.address!))}
+              style={{ marginTop: 12 }}
+            />
+            <Button
+              label="Sign out"
+              variant="quiet"
+              onPress={() => void wallet.disconnect()}
+              style={{ marginTop: 8 }}
+            />
           </Card>
         )}
       </ScrollView>
@@ -578,8 +586,8 @@ function PlansTab({
  * A plan figure in the unit it is actually denominated in.
  *
  * Amounts, targets and contributions are quote-token units, because that is
- * what the swap is signed for. Rendering 5 SOL as "$5.00" — which this screen
- * did — is wrong by whatever SOL costs. The dollar figure follows in
+ * what the trade is signed for. Rendering 0.05 ETH as "$0.05" — which this
+ * screen once did — is wrong by whatever ETH costs. The dollar figure follows in
  * parentheses only when a feed gave us a rate; without one it is simply absent
  * rather than assumed to be one-to-one.
  */

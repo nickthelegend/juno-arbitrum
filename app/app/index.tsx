@@ -4,6 +4,7 @@ import styled from "styled-components/native";
 
 import { OnboardingArt } from "../components/art";
 import { Body, Button, Display } from "../components/kit";
+import { IS_TESTNET, NETWORK_NAME } from "../lib/chain";
 
 /**
  * Onboarding.
@@ -22,21 +23,20 @@ export default function Onboarding() {
         <OnboardingArt size={320} />
       </Art>
 
-      {/* What it is, in the first five seconds. "Social Trading Community"
-          said nothing a judge could not have guessed from any fintech app;
-          this names the mechanism, the chain, and the pre-IPO half — and
-          that it is devnet, so nobody mistakes test SOL for money. */}
+      {/* What it is, in the first five seconds: the mechanism, the chain,
+          the stock half — and that it is a testnet, so nobody mistakes test
+          ETH for money. */}
       <Copy>
         <Network>
           <Dot />
-          <NetworkText>Solana devnet · no real money</NetworkText>
+          <NetworkText>{IS_TESTNET ? `${NETWORK_NAME} · test ETH, no real money` : NETWORK_NAME}</NetworkText>
         </Network>
         <Display>Every post{"\n"}is a market.</Display>
         <Body muted>
-          Post a photo or a reel and it launches its own Meteora bonding curve.
-          Buy into the posts you believe in — creators earn the trading fees.
-          Pre-IPO names like OpenAI and SpaceX trade here too, marked against
-          Tessera.
+          Post a photo or a reel and it launches its own token and bonding curve on
+          Arbitrum, priced by Juno&apos;s Stylus maths. Buy into the posts you believe in —
+          creators earn the trading fees. Stock trackers for Tesla, NVIDIA and Apple trade
+          here too, held to their Chainlink prices on-chain.
         </Body>
       </Copy>
 

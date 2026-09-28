@@ -9,17 +9,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const file = new URL("../dist/index.html", import.meta.url);
-const app = process.env.EXPO_PUBLIC_APP_URL ?? "https://juno-app-chi.vercel.app";
+const app = process.env.EXPO_PUBLIC_APP_URL ?? "";
 const title = "Juno — every post is a market";
 const description =
-  "Post a photo or a reel and it launches its own Meteora bonding curve on Solana. Buy into posts you believe in; creators earn the fees. Pre-IPO trackers marked against Tessera.";
+  "Post a photo or a reel and it launches its own token and bonding curve on Arbitrum. Buy into posts you believe in; creators earn the fees. Stock trackers held to Chainlink prices on-chain.";
 const image = "https://juno-landing-beta.vercel.app/opengraph-image";
 
 const tags = [
   `<meta name="description" content="${description}" />`,
   `<meta name="theme-color" content="#DCE7D5" />`,
   `<meta property="og:type" content="website" />`,
-  `<meta property="og:url" content="${app}" />`,
+  app ? `<meta property="og:url" content="${app}" />` : "",
   `<meta property="og:title" content="${title}" />`,
   `<meta property="og:description" content="${description}" />`,
   `<meta property="og:image" content="${image}" />`,
@@ -27,7 +27,7 @@ const tags = [
   `<meta name="twitter:title" content="${title}" />`,
   `<meta name="twitter:description" content="${description}" />`,
   `<meta name="twitter:image" content="${image}" />`,
-].join("\n    ");
+].filter(Boolean).join("\n    ");
 
 let html = readFileSync(file, "utf8");
 html = html.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);

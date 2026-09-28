@@ -1,13 +1,12 @@
 {
-  "name": "juno-expo",
-  "version": "1.0.0",
+  "name": "juno-arbitrum",
+  "version": "2.0.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",
     "@privy-io/expo": "^0.74.2",
     "@privy-io/expo-native-extensions": "^0.0.12",
-    "@solana/web3.js": "^1.99.0",
-    "bs58": "^6.0.0",
+    "@privy-io/react-auth": "^3.45.0",
     "buffer": "^6.0.3",
     "expo": "~57.0.24",
     "expo-apple-authentication": "~57.0.2",
@@ -40,7 +39,7 @@
     "react-native-web": "^0.21.2",
     "react-native-webview": "13.16.1",
     "styled-components": "^6.5.3",
-    "tweetnacl": "^1.0.3"
+    "viem": "2.56.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

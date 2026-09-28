@@ -1,12 +1,15 @@
 import Constants from "expo-constants";
 import { File as DeviceFile } from "expo-file-system";
 
+import { CHAIN_ID, explorer } from "./chain";
+
 /**
  * The Juno API client.
  *
  * Every read and every transaction comes from the Next.js app. The phone never
- * builds a Solana transaction — it asks for bytes, signs them with the embedded
- * wallet, and posts them back. See `lib/juno/tx.ts` on the server for why.
+ * encodes calldata itself: it asks the server for the steps (`to`, `data`,
+ * `value`), sends them from the Privy wallet, and tells the server the hash of
+ * what landed (`tx/record`). The contract is `docs/API.md`.
  *
  * ## Finding the server from a simulator
  *
@@ -38,11 +41,35 @@ export class ApiError extends Error {
   readonly status: number;
   /** A request abandoned at its timeout, as opposed to one that never connected. */
   timedOut = false;
-  constructor(message: string, status: number) {
+  /** The parsed error body, when there was one. */
+  body: unknown = null;
+  constructor(message: string, status: number, body: unknown = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.body = body;
   }
+}
+
+/** The faucet said "not yet". `retryAfterSeconds` is null when it did not say how long. */
+export class FaucetLimited extends ApiError {
+  readonly retryAfterSeconds: number | null;
+  constructor(retryAfterSeconds: number | null) {
+    super(
+      retryAfterSeconds
+        ? `The faucet already sent to this wallet. Try again in ${waitText(retryAfterSeconds)}.`
+        : "The faucet already sent to this wallet. Try again later.",
+      429,
+    );
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function waitText(seconds: number): string {
+  if (seconds < 90) return `${Math.max(1, Math.round(seconds))} seconds`;
+  if (seconds < 90 * 60) return `${Math.round(seconds / 60)} minutes`;
+  const hours = seconds / 3600;
+  return `${hours < 10 ? hours.toFixed(1).replace(/\.0$/, "") : Math.round(hours)} hours`;
 }
 
 /**
@@ -109,7 +136,7 @@ async function attempt<T>(
     if (!response.ok) {
       const message =
         (body as { error?: string } | null)?.error ?? `Request failed (${response.status})`;
-      throw new ApiError(message, response.status);
+      throw new ApiError(message, response.status, body);
     }
 
     return body as T;
@@ -141,10 +168,6 @@ export const api = {
 /* Shapes, mirroring the server's own types                            */
 /* ------------------------------------------------------------------ */
 
-export const WSOL_MINT = "So11111111111111111111111111111111111111112";
-/** Circle's devnet USDC — the quote token of Juno's USDC-priced pools. */
-export const USDC_DEVNET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
-
 export type CurveState = {
   progress: number;
   raisedUsd: number;
@@ -152,34 +175,34 @@ export type CurveState = {
   graduated: boolean;
 };
 
+/**
+ * A stock tracker's reference: the Chainlink feed its curve is held to.
+ *
+ * The curve contract reads the same feed on every buy and reverts one that
+ * would leave the price outside `bandBps`, or any buy at all once the feed is
+ * older than its max age (`marketOpen: false`). Sells are never blocked.
+ */
 export type NavReference = {
-  feed: string;
-  priceUsd: number;
-  /** Null when the curve and the reference cannot be compared — see `unitsPerToken`. */
-  deviation: number | null;
+  source: "chainlink";
+  /** "TSLA". */
+  symbol: string;
+  /** The feed's price, USD. */
+  price: number;
   updatedAt: string;
+  ageSeconds: number;
   bandBps: number;
-  withinBand: boolean | null;
-  /** The curve's price restated in the reference's units. Null without a ratio. */
-  impliedUsd: number | null;
-  /** How much of the reference one token stands for, fixed at launch. */
-  unitsPerToken: number | null;
-  /** `"mark"` is a published price with no timestamp — freshness is unknown. */
-  state: "live" | "closed" | "stale" | "mark";
-  /** Null when the source publishes no timestamp, as Tessera does not. */
-  ageSeconds: number | null;
-  source: "pyth" | "tessera";
-  /** Present only on a Tessera reference: a company, not a ticker. */
-  tessera: {
-    id: string;
-    mint: string;
-    sector: string;
-    holders: number;
-    markValuation: number;
-    supply: number | null;
-    /** Why this token cannot be a Juno quote mint, read from the mint itself. */
-    blocked: string | null;
-  } | null;
+  marketOpen: boolean;
+  /** The curve's own price now, in the same units. */
+  curvePrice: number;
+  /** How far the curve sits from the stock, in percent: 1.2 is 1.2% above. */
+  deviationPct: number | null;
+};
+
+export type QuoteAsset = {
+  /** Null is native ETH. */
+  address: string | null;
+  symbol: "ETH" | "USDC";
+  decimals: 18 | 6;
 };
 
 export type Coin = {
@@ -191,9 +214,12 @@ export type Coin = {
   media: { kind: "image" | "video"; url: string; posterUrl?: string; width: number; height: number };
   creator: { handle: string; displayName: string; avatarUrl: string; wallet: string };
   createdAt: string;
+  /** The curve contract. `address` is the token, the coin's id everywhere. */
   pool: string;
-  config: string;
-  quote: { mint: string; symbol: string; decimals: number };
+  chainId: number;
+  quote: QuoteAsset;
+  /** The Uniswap v3 pool, once the curve has graduated. */
+  graduatedPool?: string | null;
   /**
    * USD price of one quote token, or null when no feed answered.
    *
@@ -216,44 +242,12 @@ export type Coin = {
   nav?: NavReference | null;
   curve: CurveState;
   curvePreset: string;
-  /**
-   * What the market is marked against, from the registry. Null for a post or
-   * reel; undefined from a server that predates the field.
-   */
-  reference?: { source: "pyth" | "tessera"; id: string } | null;
+  /** What the market is held to: a Chainlink feed for a stock tracker, null for a post or reel. */
+  reference?: { source: "chainlink"; id: string; feed: string } | null;
   /** Present when the list was asked for `social=1`. */
   likes?: number;
   commentCount?: number;
   viewerLiked?: boolean | null;
-};
-
-/** A pre-IPO company as Tessera publishes it, with the Juno markets marked against it. */
-export type TesseraCompany = {
-  id: string;
-  name: string;
-  sector: string;
-  mint: string;
-  markPrice: number;
-  holders: number;
-  markValuation: number;
-  supply: number | null;
-  floatUsd: number | null;
-  shareOfCompany: number | null;
-  onChain: { transferFeeBps: number | null; blocked: string | null } | null;
-  markets: Array<{
-    address: string;
-    name: string;
-    symbol: string;
-    /** Null when the curve could not be read just now; the market still exists. */
-    priceUsd: number | null;
-    marketCap: number | null;
-    currency: string | null;
-    curvePreset: string;
-    progress: number | null;
-    graduated: boolean | null;
-    deviation: number | null;
-    withinBand: boolean | null;
-  }>;
 };
 
 export type Activity = {
@@ -265,7 +259,9 @@ export type Activity = {
   amount: number;
   valueUsd: number;
   timestamp: string;
-  signature?: string;
+  txHash?: string;
+  logIndex?: number;
+  blockNumber?: number;
 };
 
 export type Holder = {
@@ -287,7 +283,7 @@ export type FeedItem =
       price: number;
       priceNow: number | null;
       currency: string;
-      signature?: string;
+      txHash?: string;
       /** What the trader said about this fill when they signed it, if anything. */
       note: string | null;
       actor: { wallet: string; handle: string; avatarUrl: string };
@@ -368,14 +364,16 @@ export type PostDetail = {
   mediaKind: string | null;
 };
 
-/** A comment on a coin. `side` and `signature` are set when it came with a trade. */
+/** A comment on a coin. `side` and the tx hash are set when it came with a trade. */
 export type CoinComment = {
   id: string;
   coinMint: string;
   wallet: string;
   body: string;
   side?: "buy" | "sell";
+  /** The trade's transaction hash. Named `signature` in the stored row. */
   signature?: string;
+  txHash?: string;
   createdAt: string;
 };
 
@@ -410,35 +408,75 @@ export type DepthPoint = {
   fee: number;
 };
 
-export type UnsignedTransaction = { transaction: string; label: string; bytes: number };
-export type BlockhashWindow = { blockhash: string; lastValidBlockHeight: number };
+/** One transaction the server built, for the wallet to send in order. */
+export type TxStep = {
+  /** "Approve USDC", "Buy", "Launch". */
+  label: string;
+  to: string;
+  data: string;
+  /** Wei, as a decimal string. */
+  value: string;
+};
 
-export type SwapBuild = {
-  unsigned: UnsignedTransaction;
-  window: BlockhashWindow;
-  quote: {
-    amountOut: number;
-    minimumAmountOut: number;
-    fee: number;
-    priceImpact: number;
-    /** Exact-out buys only: expected cost, and the most the transaction may spend. */
-    amountIn?: number;
-    maximumAmountIn?: number;
-  };
-  quoteSymbol: string;
-  quoteUsdRate: number | null;
-  pool: string;
+export type TxBuild<Q = Record<string, unknown>> = {
+  chainId: number;
+  steps: TxStep[];
+  quote: Q;
+};
+
+/** What `tx/record` read from a confirmed receipt. */
+export type TxRecord = {
+  ok: boolean;
+  launched?: { token: string; curve: string };
+  trades: number;
+};
+
+export type SwapQuote = {
+  /** Tokens on a buy, quote asset on a sell. */
+  amountOut: number;
+  minimumAmountOut: number;
+  fee: number;
+  priceImpact: number;
+  /** Exact-out buys only: expected cost, and the most the transaction may spend. */
+  amountIn?: number;
+  maximumAmountIn?: number;
+  /** Trackers: the buy keeps the price inside the band. Always true for a post. */
+  bandOk?: boolean;
+  /** Trackers: the feed is fresh, so buys are open. Always true for a post. */
+  marketOpen?: boolean;
+  /** The band, when this is a tracker. */
+  bandBps?: number;
+  priceAfter?: number;
+  refPrice?: number;
+};
+
+export type SwapBuild = TxBuild<SwapQuote> & {
+  quoteSymbol?: string;
+  quoteUsdRate?: number | null;
+  symbol?: string;
+};
+
+/** The launch presets the app offers. `tight-nav` is for trackers, which scripts launch. */
+export type LaunchPreset = "content" | "thin-name" | "ipo-book";
+
+/** A stock reference and the Juno trackers held to it. */
+export type StockReference = {
   symbol: string;
+  name: string;
+  feed: string;
+  price: number | null;
+  updatedAt: string | null;
+  ageSeconds: number | null;
+  marketOpen: boolean;
+  trackers: Coin[];
 };
 
-export type LaunchBuild = {
-  steps: UnsignedTransaction[];
-  window: BlockhashWindow;
-  config: string;
-  baseMint: string;
-  pool: string;
+export type Balances = {
+  eth: number | null;
+  usdc: number | null;
+  /** One token's balance, when asked for with `token`. */
+  token: number | null;
 };
-
 
 /* ------------------------------------------------------------------ */
 /* Social trading and savings                                          */
@@ -494,7 +532,7 @@ export type Plan = {
   due: boolean;
   active: boolean;
   /**
-   * `amount`, `target` and `contributed` are **quote-token units** — SOL or
+   * `amount`, `target` and `contributed` are **quote-token units** — ETH or
    * USDC, whatever this pool is priced in, because that is what a buy is
    * signed for. `quoteSymbol` labels them; `quoteUsdRate` converts them, and
    * is null when no feed answered.
@@ -519,7 +557,7 @@ export const juno = {
   /** Traders ranked by profit taken. `partial` when the walk came back short. */
   leaderboard: (limit = 20) =>
     api.get<{
-      cluster: string;
+      chainId?: number;
       partial: boolean;
       poolsRead: number;
       /** What the registry holds, so `poolsRead` can be read against something. */
@@ -602,9 +640,9 @@ export const juno = {
    */
   feed: (limit = 40, following?: string) =>
     api.get<{
-      cluster: string;
+      chainId?: number;
       items: FeedItem[];
-      /** The trade half was walked against a refusing endpoint — not the whole cluster. */
+      /** The trade half came back short — not every trade there is. */
       tradesPartial: boolean;
       scope: "everyone" | "following";
       /** How many wallets the following feed covers. Null on the everyone feed. */
@@ -619,12 +657,12 @@ export const juno = {
       /** Likes and comment counts too, and whether `viewer` liked each. */
       social?: boolean;
       viewer?: string | null;
-      /** Each tracker's reference price — a Pyth or Tessera read per tracker. */
+      /** Each tracker's Chainlink reference. */
       nav?: boolean;
     },
   ) =>
     api.get<{
-      cluster: string;
+      chainId?: number;
       coins: Coin[];
       /** Registry rows the server could not price — the list is short by this many. */
       missing: number;
@@ -634,9 +672,13 @@ export const juno = {
       }${extra?.nav ? "&nav=1" : ""}`,
     ),
 
-  /** Pre-IPO companies from Tessera, each with the Juno markets marked against it. */
-  tessera: () =>
-    api.get<{ cluster: string; tokens: TesseraCompany[] }>("/api/juno/tessera"),
+  /** The Chainlink stock references, each with the trackers held to it. */
+  stocks: async () => {
+    const body = await api.get<StockReference[] | { stocks?: StockReference[]; references?: StockReference[] }>(
+      "/api/juno/stocks",
+    );
+    return Array.isArray(body) ? body : (body.stocks ?? body.references ?? []);
+  },
 
   /** Like counts for a page of coins, and whether `viewer` liked each. */
   likes: (coins: string[], viewer?: string | null) =>
@@ -647,9 +689,9 @@ export const juno = {
   setLike: (input: { coin: string; wallet: string; like: boolean }) =>
     api.post<{ coin: string; likes: number; liked: boolean }>("/api/juno/likes", input),
 
-  coin: (mint: string) =>
+  coin: (token: string) =>
     api.get<{
-      cluster: string;
+      chainId?: number;
       coin: Coin;
       activity: Activity[];
       /** The swap walk was cut short — an empty `activity` is not "no trades". */
@@ -659,8 +701,9 @@ export const juno = {
       holdersUnreadable: boolean;
       /** Null when the swap history could not be read at all — not "nobody traded". */
       crowd: Crowd | null;
-      launchSignature: string;
-    }>(`/api/juno/coins/${mint}`),
+      /** The launch transaction's hash. */
+      launchTxHash?: string | null;
+    }>(`/api/juno/coins/${token.toLowerCase()}`),
 
   portfolio: (wallet: string) => api.get<Portfolio>(`/api/juno/portfolio/${wallet}`),
 
@@ -671,7 +714,7 @@ export const juno = {
   /**
    * Say something about a coin — optionally alongside a trade you just made.
    *
-   * `side` and `signature` are what turn a comment into an announcement: the
+   * `side` and `txHash` are what turn a comment into an announcement: the
    * row then carries which way you went and the transaction that proves it,
    * so the claim is checkable rather than asserted.
    */
@@ -680,8 +723,13 @@ export const juno = {
     wallet: string;
     body: string;
     side?: "buy" | "sell";
-    signature?: string;
-  }) => api.post<{ comment: CoinComment }>("/api/juno/comments", input),
+    txHash?: string;
+  }) =>
+    api.post<{ comment: CoinComment }>("/api/juno/comments", {
+      ...input,
+      // The stored row keeps the field name it has always had.
+      ...(input.txHash ? { signature: input.txHash } : {}),
+    }),
 
   /**
    * What this curve can absorb, and the largest trade inside an impact budget.
@@ -703,7 +751,7 @@ export const juno = {
         | (DepthPoint & { ceilingReached: boolean })
         | null;
     }>(
-      `/api/juno/depth?mint=${mint}&side=${side}${impact ? `&impact=${impact}` : ""}`,
+      `/api/juno/depth?mint=${mint}&token=${mint}&side=${side}${impact ? `&impact=${impact}` : ""}`,
       60_000,
     ),
 
@@ -737,31 +785,6 @@ export const juno = {
         graduated: boolean;
       } | null;
     }>(`/api/juno/posts/${id}`),
-
-  /**
-   * Index a launch after its pool transaction has confirmed.
-   *
-   * The server re-reads the pool from chain before writing the row, so this
-   * cannot be used to claim a pool that does not exist.
-   */
-  recordLaunch: (input: {
-    baseMint: string;
-    poolAddress: string;
-    configAddress: string;
-    quoteMint: string;
-    creatorWallet: string;
-    name: string;
-    symbol: string;
-    format: "post" | "reel";
-    curvePreset: string;
-    createSignature: string;
-    description?: string | null;
-    mediaUrl?: string | null;
-    posterUrl?: string | null;
-    mediaMime?: string | null;
-    mediaWidth?: number | null;
-    mediaHeight?: number | null;
-  }) => api.post<{ pool: unknown }>("/api/juno/pools", input),
 
   /**
    * Pin a photo or video to IPFS. A video comes back with a poster frame.
@@ -825,67 +848,119 @@ export const juno = {
     }
   },
 
-  /** Devnet SOL for this wallet, from the public faucet or the operator's. */
-  faucet: (wallet: string) =>
-    api.post<{ signature: string; amount: number; source: string }>("/api/juno/faucet", { wallet }, 90_000),
+  /**
+   * Test ETH (and Juno test USDC) for this wallet, Sepolia only.
+   *
+   * A 429 carries `retryAfterSeconds`, surfaced on the thrown error so the
+   * card can say how long to wait.
+   */
+  faucet: async (wallet: string) => {
+    try {
+      return await api.post<{ eth: string; usdc: string | null }>(
+        "/api/juno/faucet",
+        { wallet, chainId: CHAIN_ID },
+        90_000,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 429) {
+        const wait = (error.body as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;
+        throw new FaucetLimited(wait ?? null);
+      }
+      if (error instanceof ApiError && error.status === 503) {
+        throw new ApiError("The faucet is empty right now. Try again later.", 503);
+      }
+      throw error;
+    }
+  },
 
-  /** Pin the token's metadata, which the mint points at forever. */
+  /** Pin the token's metadata, which the token points at forever. */
   pinMetadata: (input: {
     name: string;
     symbol: string;
     description?: string;
     curvePreset: string;
+    format?: "post" | "reel";
     imageUrl?: string;
     mimeType?: string;
+    mediaUrl?: string;
+    mediaMime?: string;
+    width?: number | null;
+    height?: number | null;
   }) => api.post<{ uri: string }>("/api/juno/metadata", input),
 
+  /** A quote, and the steps that trade it. Amounts are decimal strings in UI units. */
   buildSwap: (
     input: {
-      mint: string;
-      owner: string;
+      curve: string;
+      trader: string;
       side: "buy" | "sell";
       /** What to spend. */
-      amountIn?: number;
-      /** Or, on a buy, exactly how many tokens to receive (`SwapMode.ExactOut`). */
-      amountOut?: number;
+      amountIn?: string;
+      /** Or, on a buy, exactly how many tokens to receive. */
+      amountOut?: string;
       slippageBps?: number;
     },
     /** Shorter than the default when the caller has a usable quote to fall back on. */
     timeoutMs?: number,
-  ) => api.post<SwapBuild>("/api/juno/tx/swap", input, timeoutMs),
+  ) => api.post<SwapBuild>("/api/juno/tx/swap", { chainId: CHAIN_ID, ...input }, timeoutMs),
 
   buildLaunch: (input: {
     creator: string;
     name: string;
     symbol: string;
-    preset: string;
-    uri?: string;
-    quoteMint?: string;
-  }) => api.post<LaunchBuild>("/api/juno/tx/launch", input),
+    metadataUri: string;
+    format: "post" | "reel";
+    preset: LaunchPreset;
+    /** ETH, decimal string. */
+    initialBuy?: string;
+  }) =>
+    api.post<TxBuild<Record<string, unknown>>>("/api/juno/tx/launch", { chainId: CHAIN_ID, ...input }),
 
-  /**
-   * What this wallet can spend of one token. `null` when the read failed —
-   * not zero, which would grey out a button over a network hiccup.
-   */
-  balance: (wallet: string, mint: string) =>
-    api.get<{ wallet: string; mint: string; balance: number | null }>(
-      `/api/juno/tx/balance?wallet=${wallet}&mint=${mint}`,
+  /** Pays a coin's creator their trading fees. Only the creator's wallet can send it. */
+  buildClaim: (input: { curve: string; creator: string }) =>
+    api.post<TxBuild<{ amount?: number; quoteSymbol?: string; quoteUsdRate?: number | null }>>(
+      "/api/juno/tx/claim",
+      { chainId: CHAIN_ID, ...input },
     ),
 
-  /** The unsigned transaction that pays a coin's creator their trading fees. */
-  buildClaim: (input: { mint: string; owner: string }) =>
-    api.post<{
-      unsigned: UnsignedTransaction;
-      window: BlockhashWindow;
-      amount: number;
-      quoteSymbol: string;
-      quoteUsdRate: number | null;
-      pool: string;
-    }>("/api/juno/tx/claim", input),
+  /** Moves a full curve into its Uniswap v3 pool. Anyone can send it. */
+  buildGraduate: (input: { curve: string; caller: string }) =>
+    api.post<TxBuild>("/api/juno/tx/graduate", { chainId: CHAIN_ID, ...input }),
 
-  submit: (input: { transaction: string; window?: BlockhashWindow; poolAddress?: string }) =>
-    // Submitting waits for confirmation, which is slower than a read.
-    api.post<{ signature: string }>("/api/juno/tx/submit", input, 90_000),
+  /** Tell the server a transaction landed. It reads the receipt itself. */
+  recordTx: (input: { chainId: number; txHash: string }) =>
+    api.post<TxRecord>("/api/juno/tx/record", input, 60_000),
+
+  /**
+   * ETH, USDC and, with `token`, one coin. Each is null when its read failed —
+   * not zero, which would grey out a button over a network hiccup.
+   */
+  balances: async (wallet: string, token?: string | null): Promise<Balances> => {
+    const body = await api.get<{
+      eth?: number | null;
+      usdc?: number | null;
+      token?: number | null;
+      balance?: number | null;
+      tokens?: Record<string, number> | Array<{ address: string; balance: number }> | number | null;
+    }>(
+      `/api/juno/tx/balance?wallet=${wallet.toLowerCase()}&chainId=${CHAIN_ID}${
+        token ? `&token=${token.toLowerCase()}` : ""
+      }`,
+    );
+    let held: number | null = null;
+    if (token) {
+      const key = token.toLowerCase();
+      const tokens = body.tokens;
+      if (typeof body.token === "number") held = body.token;
+      else if (typeof tokens === "number") held = tokens;
+      else if (Array.isArray(tokens)) held = tokens.find((row) => row.address.toLowerCase() === key)?.balance ?? 0;
+      else if (tokens && typeof tokens === "object") {
+        const match = Object.entries(tokens).find(([address]) => address.toLowerCase() === key);
+        held = match ? match[1] : 0;
+      } else if (typeof body.balance === "number") held = body.balance;
+    }
+    return { eth: body.eth ?? null, usdc: body.usdc ?? null, token: held };
+  },
 
   /**
    * A URL the native `<Image>` can actually load, or null.
@@ -923,6 +998,5 @@ export const juno = {
     return media.kind === "video" ? null : juno.media(media.url);
   },
 
-  explorer: (kind: "tx" | "account" | "token", id: string, cluster = "devnet") =>
-    `https://solscan.io/${kind}/${id}${cluster === "devnet" ? "?cluster=devnet" : ""}`,
+  explorer: (kind: "tx" | "address" | "token", id: string) => explorer(kind, id),
 };

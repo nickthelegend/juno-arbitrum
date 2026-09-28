@@ -30,6 +30,7 @@ import {
 } from "../../components/kit";
 import { juno, type Coin, type Position, type Trader } from "../../lib/api";
 import { money, tokens, useApi } from "../../lib/useApi";
+import { sameAddress, validAddress } from "../../lib/chain";
 import { useWallet } from "../../lib/wallet";
 import { theme } from "../../theme";
 
@@ -70,7 +71,7 @@ export default function TraderScreen() {
 
   // A malformed address owns nothing and has no page. Checked before any read,
   // so a bad link gets a way out rather than a "Try again" that cannot work.
-  const valid = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(target ?? "");
+  const valid = validAddress(target);
   const stats = useApi(
     () => (valid ? juno.followStats(target, me.address) : Promise.resolve(null)),
     [target, me.address, valid],
@@ -85,8 +86,8 @@ export default function TraderScreen() {
    * here from the board costs nothing.
    */
   const board = useApi(() => juno.leaderboard(50), []);
-  const row = board.data?.traders.find((entry) => entry.wallet === target) ?? null;
-  const rank = board.data?.traders.findIndex((entry) => entry.wallet === target) ?? -1;
+  const row = board.data?.traders.find((entry) => sameAddress(entry.wallet, target)) ?? null;
+  const rank = board.data?.traders.findIndex((entry) => sameAddress(entry.wallet, target)) ?? -1;
 
   const [follows, setFollows] = useState<boolean | null>(null);
   const [followers, setFollowers] = useState<number | null>(null);
@@ -131,7 +132,7 @@ export default function TraderScreen() {
     }
   }, [me, follows, followers, saving, target]);
 
-  const self = me.address === target;
+  const self = sameAddress(me.address, target);
   const positions = portfolio.data?.positions ?? [];
 
   if (!valid) {
@@ -144,7 +145,7 @@ export default function TraderScreen() {
         </Nav>
         <Placeholder
           title="No such wallet"
-          detail="That is not a Solana address. The link may be cut short."
+          detail="That is not an Arbitrum address. The link may be cut short."
           action={<Button label="Back to the feed" onPress={() => router.replace("/(tabs)/social" as never)} />}
         />
       </Page>

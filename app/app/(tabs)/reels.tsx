@@ -54,7 +54,7 @@ import { theme } from "../../theme";
  *
  * What is different is the dock under the caption. On any other app the thing
  * at the bottom of a reel is a song. Here it is the reel's market: its ticker,
- * its price, how far its curve is from graduating into a DAMM v2 pool, and a
+ * its price, how far its curve is from graduating into a Uniswap pool, and a
  * Buy that opens the same trade sheet as the coin screen — so taking a
  * position in a video costs no more than liking it.
  *
@@ -138,7 +138,15 @@ export default function ReelsScreen() {
         setPage({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })
       }>
       {focused ? <StatusBar style="light" /> : null}
-      {reels.loading || reels.data === null || pageH === 0 ? (
+      {/* An error first: a failed read also leaves `data` null, and checking
+          for null first kept a dead API on a loading screen forever. */}
+      {reels.error && !reels.loading ? (
+        <NightState
+          title="Could not load reels"
+          detail={reels.error}
+          action={{ label: "Try again", onPress: reels.refresh }}
+        />
+      ) : reels.loading || reels.data === null || pageH === 0 ? (
         <NightState busy title="Loading reels" />
       ) : reels.error ? (
         <NightState
@@ -448,7 +456,7 @@ function Reel({
             </Text>
             <Text style={styles.dockMuted} numberOfLines={1}>
               {coin.curve.graduated
-                ? "Graduated · trading on DAMM v2"
+                ? "Graduated · trading on Uniswap"
                 : `${progressLabel(pct)} to graduation`}
             </Text>
           </View>

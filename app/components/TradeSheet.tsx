@@ -5,9 +5,10 @@ import styled from "styled-components/native";
 
 import { Tappable } from "./Press";
 import { Button, Caption, Col, ExternalGlyph, Label, Row } from "./kit";
-import { juno, type Coin } from "../lib/api";
+import { juno, type Coin, type SwapBuild } from "../lib/api";
+import { describeTxError, explorer, GAS_RESERVE_ETH, NETWORK_NAME } from "../lib/chain";
 import { money, tokens } from "../lib/useApi";
-import { useWallet } from "../lib/wallet";
+import { useWallet, type SendProgress } from "../lib/wallet";
 import { theme } from "../theme";
 
 /**
@@ -24,8 +25,14 @@ import { theme } from "../theme";
  * The amount could be multiplied by the last price, and that estimate would be
  * wrong in exactly the way that matters: a bonding curve moves as it fills, so
  * a large order does not clear at spot. The server quotes against the live
- * curve and returns the transaction built against that same quote, so what is
- * shown is what gets signed.
+ * curve (`quoteBuy` / `quoteSell` on the curve contract) and returns the steps
+ * built against that same quote, so what is shown is what gets signed.
+ *
+ * A post is priced in ETH and is one step. A stock tracker is priced in USDC
+ * and is two — "Approve USDC", then "Buy" — and the sheet shows both, ticking
+ * each off as its receipt comes back. A tracker's quote also says whether the
+ * buy stays inside the stock's band and whether the market is open, and that
+ * is said before anything is signed.
  *
  * Debounced, because a quote is an RPC round trip and typing "125" should not
  * cost three of them.
@@ -34,18 +41,21 @@ import { theme } from "../theme";
  *
  * Juno is a social app and a trade was the one thing you could not talk about:
  * the comment box here attaches your words to the fill, with the side and the
- * signature on the row. That is what makes it an announcement rather than a
- * boast — anyone reading it can check it on an explorer.
+ * transaction hash on the row. That is what makes it an announcement rather
+ * than a boast — anyone reading it can check it on Arbiscan.
  *
- * Posted only after the signature lands, and a failure to post says so without
+ * Posted only after the receipt lands, and a failure to post says so without
  * pretending the trade failed. The two are different events and only one of
  * them moved money.
  */
 
 /** Dollar sizes, converted at the quote token's rate. */
-const QUICK_USD = [2, 20, 50, 100];
-/** What a buy offers when no USD feed answered, in quote units. */
-const QUICK_QUOTE = [0.1, 0.25, 0.5, 1];
+const QUICK_USD = [2, 5, 10, 25];
+/** What a buy offers when no USD feed answered, in quote units. The faucet sends 0.02 ETH. */
+const QUICK_QUOTE: Record<"ETH" | "USDC", number[]> = {
+  ETH: [0.001, 0.0025, 0.005, 0.01],
+  USDC: [5, 10, 25, 50],
+};
 /** A sell is a fraction of what you hold; absolute sizes mean nothing there. */
 const QUICK_SELL = [0.25, 0.5, 0.75, 1];
 /** Exact-out sizes, in tokens. Every Juno coin has a 1B supply. */
@@ -64,8 +74,7 @@ const IMPACT_BUDGET = 0.01;
  * How long the pre-sign refresh is allowed to take.
  *
  * Shorter than the client's default, because this one has somewhere to fall
- * back to. Waiting the full forty-five seconds for a refresh would spend most
- * of the blockhash window the refresh exists to protect.
+ * back to: the quote already on screen, whose deadline is minutes away.
  */
 const REQUOTE_MS = 12_000;
 
@@ -101,7 +110,7 @@ export function TradeSheet({
   /**
    * A swap **confirmed**, with the quote amount that was spent or received.
    *
-   * Fires on the signature landing, not on the sheet closing. Anything that
+   * Fires on the receipt landing, not on the sheet closing. Anything that
    * records a fill has to hang off this and only this: a callback on close
    * would count a trade that errored, and one on submit would count a
    * transaction that never made it into a block.
@@ -109,7 +118,7 @@ export function TradeSheet({
   onFilled?: (quoteAmount: number) => void;
   /** An announcement was posted alongside the fill. */
   onCommented?: () => void;
-  /** SOL held, for the network fee. Null when unknown — then it is not checked. */
+  /** ETH held, for gas. Null when unknown — then it is not checked. */
   feeBalance?: number | null;
 }) {
   const wallet = useWallet();
@@ -124,11 +133,13 @@ export function TradeSheet({
    * its token amount exactly.
    */
   const [exact, setExact] = useState(false);
-  const [quote, setQuote] = useState<Awaited<ReturnType<typeof juno.buildSwap>> | null>(null);
+  const [quote, setQuote] = useState<SwapBuild | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [stage, setStage] = useState<Stage>("entry");
   const [error, setError] = useState<string | null>(null);
-  const [signature, setSignature] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  /** Each step's label and where it has got to, while the wallet sends. */
+  const [progress, setProgress] = useState<{ labels: string[]; at: SendProgress } | null>(null);
   /** When the chain confirmed it — shown beside the hash on the receipt. */
   const [landedAt, setLandedAt] = useState<Date | null>(null);
   const [note, setNote] = useState("");
@@ -154,6 +165,10 @@ export function TradeSheet({
   const valid = Number.isFinite(value) && value > 0;
   const exactOut = side === "buy" && exact;
   const unit = side === "buy" && !exactOut ? coin.quote.symbol : coin.symbol;
+  /** Decimals the typed amount may carry: USDC has six, ETH and every Juno token eighteen. */
+  const maxDecimals = side === "buy" && !exactOut && coin.quote.decimals === 6 ? 6 : 9;
+  /** A tracker whose feed has gone stale takes sells only; the contract enforces it too. */
+  const marketClosed = side === "buy" && (coin.nav?.marketOpen === false || quote?.quote.marketOpen === false);
   /** What the balance is counted in — never the exact-out token. */
   const balanceUnit = side === "buy" ? coin.quote.symbol : coin.symbol;
   const rate = coin.quoteUsdRate;
@@ -173,65 +188,65 @@ export function TradeSheet({
   /*
    * Why this trade cannot go through, decided before anything is signed.
    *
-   * The server builds a transaction for any amount, and the chain refuses one
-   * the wallet cannot pay for — which reached the person as a raw simulation
-   * log. These are the refusals worth saying in words, with where to fix
-   * them. Unknown balances are not checked: a read that failed is not "empty".
+   * The server builds steps for any amount, and the chain refuses what the
+   * wallet cannot pay for. These are the refusals worth saying in words, with
+   * where to fix them. Unknown balances are not checked: a read that failed is
+   * not "empty".
    */
-  const FEE_RESERVE = 0.01;
   // What this trade takes out of the wallet. For an exact-out buy that is only
   // known once quoted, and the bound that matters is the most it may cost.
   const spend = exactOut ? (quote?.quote.maximumAmountIn ?? null) : value;
-  const blocker = useMemo((): { text: string; url?: string } | null => {
-    if (!valid) return null;
-    if (balance !== null && spend !== null && spend > balance) {
-      if (side === "sell") return { text: `You hold ${tokens(balance)} ${coin.symbol}.` };
-      return coin.quote.symbol === "USDC"
-        ? {
-            text: `This market is priced in USDC and you have ${tokens(balance)}. Get devnet USDC from Circle's faucet.`,
-            url: "https://faucet.circle.com",
-          }
-        : { text: `You have ${tokens(balance)} SOL. Get devnet SOL from your profile.` };
-    }
-    const sol = coin.quote.symbol === "SOL" && side === "buy" ? balance : feeBalance;
-    const spending = coin.quote.symbol === "SOL" && side === "buy" ? (spend ?? 0) : 0;
-    if (sol !== null && sol !== undefined && sol - spending < FEE_RESERVE) {
+  const paysEth = coin.quote.symbol === "ETH" && side === "buy";
+  const blocker = useMemo((): { text: string; short: string } | null => {
+    if (marketClosed) {
       return {
-        text:
-          spending > 0
-            ? `Leave about ${FEE_RESERVE} SOL for the network fee.`
-            : "You need a little SOL for the network fee. Get devnet SOL from your profile.",
+        text: "Market closed — the stock price is stale, so buys are paused. You can still sell.",
+        short: "Market closed · sells only",
       };
     }
+    if (!valid) return null;
+    if (balance !== null && spend !== null && spend > balance) {
+      if (side === "sell") return { text: `You hold ${tokens(balance)} ${coin.symbol}.`, short: `Not enough ${coin.symbol}` };
+      return coin.quote.symbol === "USDC"
+        ? {
+            text: `This market is priced in USDC and you have ${tokens(balance)}. Get test USDC from your profile.`,
+            short: "Not enough USDC",
+          }
+        : { text: `You have ${tokens(balance)} ETH. Get test ETH from your profile.`, short: "Not enough ETH" };
+    }
+    const eth = paysEth ? balance : feeBalance;
+    const spending = paysEth ? (spend ?? 0) : 0;
+    if (eth !== null && eth !== undefined && eth - spending < GAS_RESERVE_ETH) {
+      return spending > 0
+        ? { text: `Leave about ${GAS_RESERVE_ETH} ETH for gas.`, short: "Leave ETH for gas" }
+        : { text: "You need a little ETH for gas. Get test ETH from your profile.", short: "Need ETH for gas" };
+    }
     return null;
-  }, [valid, balance, spend, side, coin.symbol, coin.quote.symbol, feeBalance]);
+  }, [marketClosed, valid, balance, spend, side, coin.symbol, coin.quote.symbol, feeBalance, paysEth]);
 
   /**
-   * The reference, said before signing rather than only on the coin page.
+   * The stock, said before signing rather than only on the coin page.
    *
-   * A tracker's curve can run away from the price it is meant to follow, and
-   * the band exists for exactly that moment. Buying above it pays a premium
-   * the reference does not support; a feed that has gone stale means the band
-   * cannot be checked at all, which is a different warning.
+   * A tracker's curve is held to a Chainlink price: the contract reverts a buy
+   * that would leave the curve more than the band above it. The quote already
+   * knows whether this buy would (`bandOk`), so the sheet says so first.
    */
+  const bandBps = quote?.quote.bandBps ?? coin.nav?.bandBps ?? null;
   const navWarning = useMemo((): string | null => {
-    const nav = coin.nav;
-    if (!nav) return null;
-    const label =
-      nav.tessera?.id ??
-      /^Equity\.[A-Z]+\.([A-Z.]+)\/USD$/.exec(nav.feed)?.[1] ??
-      nav.feed.slice(0, 8);
-    if (nav.state === "stale") {
-      return `${label}'s price is stale, so this curve can't be checked against it right now.`;
+    if (side === "buy" && quote?.quote.bandOk === false) {
+      return `This buy would push the price more than ${
+        bandBps ? `${Number((bandBps / 100).toFixed(2))}%` : "its band"
+      } above the stock. Try a smaller amount.`;
     }
-    if (nav.deviation === null || nav.withinBand !== false) return null;
-    const above = nav.deviation > 0;
-    return `This curve is ${Math.abs(nav.deviation * 100).toFixed(1)}% ${above ? "above" : "below"} ${label}'s ${
-      nav.source === "tessera" ? "mark" : "price"
-    }, outside its ${nav.bandBps / 100}% band.${
-      side === "buy" && above ? " A buy here pays more than the reference." : ""
-    }${side === "sell" && !above ? " A sell here gets less than the reference." : ""}`;
-  }, [coin.nav, side]);
+    const nav = coin.nav;
+    if (!nav || nav.deviationPct === null) return null;
+    const band = nav.bandBps / 100;
+    if (Math.abs(nav.deviationPct) <= band) return null;
+    const above = nav.deviationPct > 0;
+    return `This curve is ${Math.abs(nav.deviationPct).toFixed(1)}% ${above ? "above" : "below"} ${nav.symbol}, outside its ${band}% band.${
+      side === "sell" && !above ? " A sell here gets less than the stock." : ""
+    }`;
+  }, [coin.nav, side, quote?.quote.bandOk, bandBps]);
 
   const usdEquivalent = useMemo(() => {
     if (!valid) return null;
@@ -245,9 +260,11 @@ export function TradeSheet({
   // An amount the wallet cannot cover is refused in words above; quoting it
   // would spend a round trip on a transaction nobody can sign.
   const overBalance = valid && balance !== null && !exactOut && value > balance;
+  /** The typed amount as the server wants it: a decimal string, no trailing point. */
+  const amountText = amount.replace(/\.$/, "");
 
   useEffect(() => {
-    if (!valid || !wallet.address || overBalance) {
+    if (!valid || !wallet.address || overBalance || marketClosed) {
       setQuote(null);
       setQuoting(false);
       return;
@@ -259,10 +276,10 @@ export function TradeSheet({
     const timer = setTimeout(async () => {
       try {
         const built = await juno.buildSwap({
-          mint: coin.address,
-          owner: wallet.address!,
+          curve: coin.pool,
+          trader: wallet.address!,
           side,
-          ...(exactOut ? { amountOut: value } : { amountIn: value }),
+          ...(exactOut ? { amountOut: amountText } : { amountIn: amountText }),
         });
         if (!cancelled) {
           setQuote(built);
@@ -282,7 +299,7 @@ export function TradeSheet({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [amount, valid, value, side, exactOut, coin.address, wallet.address, overBalance]);
+  }, [amountText, valid, side, exactOut, coin.pool, wallet.address, overBalance, marketClosed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,72 +330,66 @@ export function TradeSheet({
 
   const press = useCallback((key: string) => {
     setError(null);
-    setSignature(null);
+    setTxHash(null);
     setAmount((current) => {
       if (key === "back") return current.slice(0, -1);
       if (key === ".") return current.includes(".") ? current : current === "" ? "0." : `${current}.`;
       // No leading zeros: "05" is not an amount anyone meant to type.
       const next = current === "0" ? key : current + key;
       const [, decimals = ""] = next.split(".");
-      if (decimals.length > 9) return current;
+      if (decimals.length > maxDecimals) return current;
       return next;
     });
-  }, []);
+  }, [maxDecimals]);
 
   async function confirm() {
     if (!quote) return;
     setStage("confirming");
     setError(null);
+    setProgress(null);
     try {
       const address = wallet.address ?? (await wallet.connect());
       if (!address) throw new Error("No wallet available");
 
       /*
-       * Rebuild the quote, every time, right before signing.
+       * Rebuild the quote right before signing.
        *
-       * A quote carries the blockhash the transaction is signed against, and a
-       * Solana blockhash lives about ninety seconds. This was conditional on
-       * the quote being older than thirty seconds, and that still failed: the
-       * *round trip* — rebuild, sign, submit, confirm — can itself take longer
-       * than the remaining life of a blockhash issued half a minute ago,
-       * especially against an endpoint that is rate-limiting.
-       *
-       * So the branch is gone. One extra quote on the fast path costs a call
-       * this sheet already makes on every keystroke; a dead blockhash costs
-       * the trade. It is also *more* correct: the curve moves as it fills, so
-       * a minute-old quote is quoting a price nobody would get now. The
-       * rebuilt quote replaces the visible one before signing, so what is
+       * The curve moves as it fills, so a minute-old quote is quoting a price
+       * nobody would get now, and its `minOut` and deadline were set from it.
+       * The rebuilt quote replaces the visible one before signing, so what is
        * signed is what the sheet shows.
        */
       const fresh = await juno
         .buildSwap(
           {
-            mint: coin.address,
-            owner: address,
+            curve: coin.pool,
+            trader: address,
             side,
-            ...(exactOut ? { amountOut: value } : { amountIn: value }),
+            ...(exactOut ? { amountOut: amountText } : { amountIn: amountText }),
           },
           REQUOTE_MS,
         )
         // A refresh that times out is not a reason to refuse the trade: the
-        // quote on screen may still be inside its blockhash window, and
-        // failing here would turn a slow endpoint into a failed buy. If the
-        // old one has also expired the submit says so, in those words.
+        // quote on screen is still inside its deadline, and the contract's
+        // slippage check is what actually protects the price.
         .catch(() => null);
       const live = fresh ?? quote;
       if (fresh) {
         setQuote(fresh);
         quotedAt.current = Date.now();
       }
+      if (side === "buy" && live.quote.marketOpen === false) {
+        throw new Error("Market closed — the stock price is stale, so buys are paused. You can still sell.");
+      }
 
-      const signed = await wallet.sign(live.unsigned.transaction);
-      const { signature: landed } = await juno.submit({
-        transaction: signed,
-        window: live.window,
-        poolAddress: live.pool,
+      const labels = live.steps.map((step) => step.label);
+      const sent = await wallet.send(live.steps, {
+        chainId: live.chainId,
+        onProgress: (at) => setProgress({ labels, at }),
       });
-      setSignature(landed);
-      setLandedAt(new Date());
+      const landed = sent.hashes[sent.hashes.length - 1]!;
+      setTxHash(landed);
+      setLandedAt(sent.confirmedAt);
       setStage("done");
       onFilled?.(exactOut ? (live.quote.amountIn ?? value) : value);
 
@@ -393,7 +404,7 @@ export function TradeSheet({
             wallet: address,
             body,
             side,
-            signature: landed,
+            txHash: landed,
           });
           setNote("");
           onCommented?.();
@@ -406,8 +417,12 @@ export function TradeSheet({
         }
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The trade failed");
+      const failure = describeTxError(caught);
+      // Declined in the wallet, or the sign-in sheet was closed: say nothing.
+      setError(failure.cancelled ? null : failure.message || "The trade failed");
       setStage("entry");
+    } finally {
+      setProgress(null);
     }
   }
 
@@ -422,7 +437,7 @@ export function TradeSheet({
    * The quick sizes, in whatever unit the trade is actually denominated in.
    *
    * Dollars when a feed gives a rate to convert them at, because "$20" is the
-   * size someone has in mind and "0.175 SOL" is the same thought after
+   * size someone has in mind and "0.0045 ETH" is the same thought after
    * arithmetic they should not have to do. Without a rate the dollar labels
    * would be a guess, so the presets fall back to quote units and say so by
    * showing the symbol.
@@ -440,12 +455,13 @@ export function TradeSheet({
       return QUICK_TOKENS.map((size) => ({ label: tokens(size), amount: size }));
     }
     if (rate === null || rate <= 0) {
-      return QUICK_QUOTE.map((size) => ({ label: `${size} ${coin.quote.symbol}`, amount: size }));
+      return QUICK_QUOTE[coin.quote.symbol].map((size) => ({ label: `${size} ${coin.quote.symbol}`, amount: size }));
     }
     return QUICK_USD.map((dollars) => ({ label: `$${dollars}`, amount: dollars / rate }));
   }, [side, exactOut, balance, rate, coin.quote.symbol]);
 
-  const done = stage === "done" && signature !== null;
+  const done = stage === "done" && txHash !== null;
+  const stepLabels = quote && quote.steps.length > 1 ? quote.steps.map((step) => step.label) : null;
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
@@ -491,17 +507,17 @@ export function TradeSheet({
               {side === "buy"
                 ? `Bought ${receiving ?? ""}`
                 : `Sold ${tokens(value)} ${coin.symbol} for ${receiving ?? ""}`}{" "}
-              — confirmed on Solana.
+              — confirmed on {NETWORK_NAME}.
             </Label>
             {noteError ? <ErrorText>{noteError}</ErrorText> : null}
             <Receipt>
-              tx {signature!.slice(0, 8)}…{signature!.slice(-8)}
+              tx {txHash!.slice(0, 10)}…{txHash!.slice(-8)}
               {landedAt
                 ? ` · ${landedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
                 : ""}
             </Receipt>
-            <LinkTap onPress={() => Linking.openURL(juno.explorer("tx", signature!))}>
-              <LinkText>View the transaction</LinkText>
+            <LinkTap onPress={() => Linking.openURL(explorer("tx", txHash!))}>
+              <LinkText>View on Arbiscan</LinkText>
               <ExternalGlyph />
             </LinkTap>
             <Button label="Done" onPress={onDone} style={{ marginTop: 16, alignSelf: "stretch" }} />
@@ -609,7 +625,7 @@ export function TradeSheet({
               </Row>
               <Mono_>
                 {quote
-                  ? // `money` keeps small fees legible (0.0₄48 SOL) where four
+                  ? // `money` keeps small fees legible (0.0₄48 ETH) where four
                     // fixed decimals rounded a real fee on a small buy to 0.0000.
                     money(quote.quote.fee, coin.quote.symbol, { compact: false })
                   : quoting
@@ -664,20 +680,35 @@ export function TradeSheet({
 
             {/* No wallet means no quote — the button used to sit disabled
                 with nothing saying why. Creating one is the next step. */}
+            {/* The steps this trade takes, and where each has got to. A tracker
+                buy is two transactions and the wallet asks twice; saying so
+                beforehand is the difference between a flow and a surprise. */}
+            {stage === "confirming" && progress ? (
+              <Steps labels={progress.labels} at={progress.at} />
+            ) : stepLabels ? (
+              <Caption style={{ textAlign: "center" }}>{stepLabels.join("  →  ")}</Caption>
+            ) : null}
+
             {!wallet.address ? (
               <Button
-                label="Create a wallet to trade"
+                label="Sign in to trade"
                 tall
-                onPress={() => void wallet.connect()}
+                onPress={() => void wallet.connect().catch(() => undefined)}
                 style={{ alignSelf: "stretch" }}
               />
             ) : (
               <Button
                 label={
                   stage === "confirming"
-                    ? "Confirming…"
+                    ? progress
+                      ? progress.at.phase === "signing"
+                        ? `${progress.at.label}: confirm in wallet…`
+                        : progress.at.phase === "checking"
+                          ? `${progress.at.label}: checking…`
+                          : `${progress.at.label}: confirming…`
+                      : "Confirming…"
                     : blocker
-                      ? `Not enough ${side === "sell" ? coin.symbol : blocker.text.includes("fee") ? "SOL" : coin.quote.symbol}`
+                      ? blocker.short
                       : side === "buy"
                         ? "Buy"
                         : "Sell"
@@ -692,14 +723,7 @@ export function TradeSheet({
             )}
 
             {navWarning && !blocker ? <WarnText>{navWarning}</WarnText> : null}
-            {blocker ? (
-              <HintText>
-                {blocker.text}
-                {blocker.url ? (
-                  <HintLink onPress={() => void Linking.openURL(blocker.url!)}>{"  "}Open faucet</HintLink>
-                ) : null}
-              </HintText>
-            ) : null}
+            {blocker ? <HintText>{blocker.text}</HintText> : null}
             {error ? <ErrorText>{error}</ErrorText> : null}
 
             <Pad>
@@ -731,6 +755,29 @@ export function TradeSheet({
  */
 function trimTrailingZeros(value: number): string {
   return String(Number(value.toPrecision(6)));
+}
+
+/** "Approve USDC ✓ → Buy …", live while the wallet works through the steps. */
+function Steps({ labels, at }: { labels: string[]; at: SendProgress }) {
+  return (
+    <Row gap={8} justify="center" align="center" style={{ flexWrap: "wrap" }}>
+      {labels.map((label, index) => {
+        const done = index < at.index || (index === at.index && at.phase === "confirmed");
+        const active = index === at.index && !done;
+        return (
+          <Row key={`${label}-${index}`} gap={8} align="center">
+            {index > 0 ? <StepArrow>→</StepArrow> : null}
+            <StepChip $done={done} $active={active}>
+              <StepText $done={done} $active={active}>
+                {done ? "✓ " : active ? "… " : ""}
+                {label}
+              </StepText>
+            </StepChip>
+          </Row>
+        );
+      })}
+    </Row>
+  );
 }
 
 function Info() {
@@ -766,9 +813,23 @@ const HintText = styled.Text`
   text-align: center;
 `;
 
-const HintLink = styled.Text`
+const StepArrow = styled.Text`
+  font-size: ${(p) => p.theme.type.caption.size}px;
+  color: ${(p) => p.theme.colors.faint};
+`;
+
+const StepChip = styled.View<{ $done: boolean; $active: boolean }>`
+  padding: 5px 10px;
+  border-radius: ${(p) => p.theme.radius.pill}px;
+  background-color: ${(p) => (p.$done ? p.theme.colors.lime : p.$active ? p.theme.colors.surfaceAlt : "transparent")};
+  border-width: ${(p) => p.theme.hairline}px;
+  border-color: ${(p) => (p.$done ? p.theme.colors.lime : p.theme.colors.line)};
+`;
+
+const StepText = styled.Text<{ $done: boolean; $active: boolean }>`
+  font-size: ${(p) => p.theme.type.caption.size}px;
   font-weight: 800;
-  color: ${(p) => p.theme.colors.focus};
+  color: ${(p) => (p.$done ? p.theme.colors.onLime : p.$active ? p.theme.colors.text : p.theme.colors.faint)};
 `;
 
 const Scrim = styled.Pressable`

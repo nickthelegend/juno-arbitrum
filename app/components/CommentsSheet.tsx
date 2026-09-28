@@ -232,7 +232,7 @@ function CommentRow({ comment }: { comment: Row }) {
           </Label>
           <Caption>{since(comment.createdAt)}</Caption>
           {/* A comment that came with a trade carries which way it went. The
-              signature is on the row too, so this is a checkable claim rather
+              transaction hash is on the row too, so this is a checkable claim rather
               than a boast. */}
           {comment.side ? (
             <Side $buy={comment.side === "buy"}>{comment.side === "buy" ? "bought" : "sold"}</Side>

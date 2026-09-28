@@ -20,12 +20,22 @@ export function since(iso: string, now = Date.now()): string {
   return `${Math.round(hours / 24)}d`;
 }
 
+/** How old a price is: "12s", "4m", "3h", "2d". Null for unknown. */
+export function age(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "—";
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86_400) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86_400)}d`;
+}
+
 /**
  * A money figure in whatever unit it is actually in.
  *
- * Never assumes dollars. A SOL-quoted pool with no USD feed is reported in SOL,
- * and printing a `$` in front of that number would overstate it by the SOL
- * price.
+ * Never assumes dollars. An ETH-quoted curve with no USD feed is reported in
+ * ETH, and printing a `$` in front of that number would overstate it by the
+ * ETH price.
  */
 export function money(
   value: number | null | undefined,
@@ -93,7 +103,7 @@ function subscripted(abs: number): string {
  * hundred-thousandth of anything and two would round a real balance to
  * nothing. Zero is the exception: `0.0000` is four digits of precision about a
  * quantity that has none, and it read especially badly beside a figure at a
- * different scale — "0.0000 of 50.00 SOL" in a savings goal.
+ * different scale — "0.0000 of 0.05 ETH" in a savings goal.
  */
 export function tokens(value: number): string {
   if (!Number.isFinite(value)) return "—";

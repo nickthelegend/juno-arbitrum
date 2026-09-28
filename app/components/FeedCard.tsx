@@ -194,7 +194,7 @@ export function FeedCard({
 
         {coin.curve.graduated ? (
           <View style={styles.graduated}>
-            <Text style={styles.graduatedText}>On DAMM v2</Text>
+            <Text style={styles.graduatedText}>On Uniswap</Text>
           </View>
         ) : (
           <Tappable onPress={onBuy} to={0.94}>

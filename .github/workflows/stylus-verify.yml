@@ -7,7 +7,7 @@
 # macOS arm64, and a Linux build of the same source with the same rustc lays
 # the code out differently. The WASM also embeds dependency source paths in
 # its panic locations. So this runs on a macOS arm64 runner with the deploying
-# machine's CARGO_HOME path (/Users/jaibajrang/.cargo).
+# machine's CARGO_HOME (/Users/jaibajrang/.cargo) and project path.
 name: stylus-verify
 on:
   workflow_dispatch:
@@ -35,4 +35,10 @@ jobs:
       - run: |
           rustup toolchain install 1.91.0 --profile minimal --target wasm32-unknown-unknown
           cargo +1.91.0 install --locked cargo-stylus --version 0.10.9
-      - run: bash scripts/stylus-match.sh "${{ inputs.deployment_tx || '0x62ccef112150c59e5df0de6a7d987f4a81f4228279e5847ebf20138441f6ef3b' }}" "${{ inputs.rpc || 'https://sepolia-rollup.arbitrum.io/rpc' }}"
+      # cargo stylus hashes the project's source files into the initcode, and
+      # that hash depends on where they sit, so rebuild from the deploy path.
+      - run: |
+          sudo mkdir -p "/Volumes/Extreme SSD/Projects" && sudo chown -R "$USER" "/Volumes/Extreme SSD"
+          cp -R "$GITHUB_WORKSPACE" "/Volumes/Extreme SSD/Projects/juno-arbitrum"
+      - working-directory: /Volumes/Extreme SSD/Projects/juno-arbitrum
+        run: bash scripts/stylus-match.sh "${{ inputs.deployment_tx || '0x62ccef112150c59e5df0de6a7d987f4a81f4228279e5847ebf20138441f6ef3b' }}" "${{ inputs.rpc || 'https://sepolia-rollup.arbitrum.io/rpc' }}"

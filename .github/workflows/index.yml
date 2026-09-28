@@ -1,0 +1,14 @@
+# Backstop for the API's index-on-read: one indexer pass every five minutes,
+# so trades made outside the app appear even when nobody is browsing.
+name: index
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -fsS -X POST "https://juno-arb-api.vercel.app/api/juno/index?chainId=421614" \
+            -H "x-juno-index-secret: ${{ secrets.JUNO_INDEX_SECRET }}" | head -c 500

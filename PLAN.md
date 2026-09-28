@@ -10,6 +10,28 @@ release v1.1.0), referred to below as **the Solana repo**.
 
 ---
 
+## Status — 29 Sep 2026 (execution run)
+
+| Phase | Status | Evidence |
+|---|---|---|
+| 1 Setup | DONE | repo github.com/nickthelegend/juno-arbitrum; Foundry + OZ 5.4 + Chainlink; `cargo stylus` 0.10.9; deployer `0x39D7…53B9`, faucet `0x4A04…D6DB` (keys in .env only); external addresses verified on-chain |
+| 2 Contracts | DONE | `forge test`: 31 pass (Arbitrum One fork) + 4 invariants × 8,192 calls; coverage JunoCurve 97%, Factory 99%, Token 100%; Slither triaged (docs/SECURITY.md); Stylus `cargo test --lib` 9 pass, `cargo stylus check` OK (20.5 KB) |
+| 3 Sepolia deploy | BLOCKED — deployer has 0 Arbitrum Sepolia ETH | `scripts/deploy.sh` rehearsed on an anvil fork of Sepolia (with CurveMathRef standing in for Stylus, which anvil can't run): smoke test passed end to end incl. `OutsideBand(365.30, 361.22, 1%)` and graduation into Uniswap v3 position #3803 |
+| 4 Server | DONE (secrets pending) | 132 unit + 13 integration tests (Sepolia fork); deployed to Vercel https://juno-arb-api.vercel.app — DB/Mongo/Pinata/faucet secrets must be set by the owner (`bash scripts/vercel-secrets.sh`) |
+| 5 App | DONE | tsc clean; web/iOS/Android bundles; web live at https://juno-arb-app.vercel.app (Privy needs the domain allowed) |
+| 6 Demo data | BLOCKED on Phase 3 | `server/scripts/demo-activity.ts` ran on the fork: 5 wallets, 6 posts/reels, 3 trackers, 28 trades, 1 graduation |
+| 7 Arbitrum One proof | USER ACTION | `CHAIN=one bash scripts/deploy.sh` then `npx tsx scripts/mainnet-proof.ts` (asks before each tx; ~0.01 ETH + 2 USDC) |
+| 8 Deliverables | PARTIAL | README, SECURITY, SUBMISSION, pitch deck (Slides artifact); APK/iOS/web must be rebuilt after the Sepolia deploy (addresses are compiled in); demo film after Phase 6 |
+
+Changes from the plan made during execution:
+- API hosted on **Vercel** (user request), not Railway; indexing runs on read
+  (after the response) plus a GitHub Actions cron every 5 minutes.
+- Tracker staleness `maxAge` = **26 h** (Chainlink equity feeds have a 24 h
+  heartbeat; a weekend now reads as market closed).
+- Demo tracker shape: 100 tokens, 0.99× → 1.04× the stock, 1% band — so the
+  top of the curve opens only as the stock rises and a ~$9.5k buy reverts.
+- Sepolia trackers are quoted in Juno's faucet-mintable **Test USDC**; Arbitrum One uses Circle USDC.
+
 ## 1. Executive summary
 
 Juno is a social app where every photo or reel is its own market: posting it

@@ -1,0 +1,31 @@
+# Keep the Sepolia mock stock feeds in step with the real Chainlink feeds on
+# Arbitrum One, every 30 minutes through US market hours. Signs with the
+# keeper key, which owns only the three Sepolia MockAggregators.
+# workflow_dispatch with force_open stamps updatedAt = now (demo recording
+# outside market hours).
+name: feeds
+on:
+  schedule:
+    - cron: "*/30 13-21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force_open:
+        description: Stamp updatedAt = now (demo only)
+        type: boolean
+        default: false
+jobs:
+  keep-fresh:
+    runs-on: ubuntu-latest
+    env:
+      KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
+      ARB_SEPOLIA_RPC: https://sepolia-rollup.arbitrum.io/rpc
+      ARB_ONE_RPC: https://arb1.arbitrum.io/rpc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: scripts
+      - run: npx tsx keep-feeds-fresh.ts ${{ inputs.force_open && '--force-open' || '' }}
+        working-directory: scripts

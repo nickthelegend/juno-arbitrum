@@ -162,7 +162,7 @@ export function usePrivyBridge(): PrivyBridge {
       const eth = await provider();
       const hash = await eth.request({
         method: "eth_sendTransaction",
-        params: [{ from: wallet.address, to: tx.to, data: tx.data, value: toHex(tx.value) }],
+        params: [{ from: wallet.address, to: tx.to, data: tx.data, value: toHex(tx.value), ...(tx.gas ? { gas: toHex(tx.gas) } : {}) }],
       });
       if (typeof hash !== "string" || !hash.startsWith("0x")) throw new Error("The wallet returned no transaction hash");
       return hash as `0x${string}`;

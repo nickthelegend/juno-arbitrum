@@ -5,6 +5,8 @@ export type TxRequest = {
   /** Wei. */
   value: bigint;
   chainId: number;
+  /** Gas limit the server padded (estimate x 1.3); estimates alone run short on graduation. */
+  gas?: bigint;
 };
 
 /**

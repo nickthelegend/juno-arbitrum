@@ -21,6 +21,10 @@ export type ChainAddresses = {
   feeds: Partial<Record<"TSLA" | "NVDA" | "AAPL", `0x${string}`>>;
   /** True when `feeds` are Juno's MockAggregators mirroring the Arbitrum One prices. */
   feedsAreMocks: boolean;
+  /** Solidity reference maths, deployed on Sepolia only for the Stylus differential check. */
+  curveMathRef?: `0x${string}`;
+  /** Block the factory was deployed in: where the indexer starts. */
+  factoryBlock?: number;
 };
 
 export const ADDRESSES: Record<number, ChainAddresses> = {

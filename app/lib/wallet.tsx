@@ -204,6 +204,7 @@ function Wallet({ children }: { children: React.ReactNode }) {
             to: step.to as Hex,
             data: step.data as Hex,
             value: BigInt(step.value || "0"),
+            ...(step.gas ? { gas: BigInt(step.gas) } : {}),
           };
 
           // Ask the chain first, so a revert is explained before anything is

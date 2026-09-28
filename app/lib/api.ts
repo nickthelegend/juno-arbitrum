@@ -416,6 +416,8 @@ export type TxStep = {
   data: string;
   /** Wei, as a decimal string. */
   value: string;
+  /** Padded gas limit, decimal string, when the server set one. */
+  gas?: string;
 };
 
 export type TxBuild<Q = Record<string, unknown>> = {

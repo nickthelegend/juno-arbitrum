@@ -13,8 +13,9 @@ const read = (file, name) => {
 };
 
 const abis = {
-  junoFactoryAbi: read("IJuno.sol", "IJunoFactory"),
-  junoCurveAbi: read("IJuno.sol", "IJunoCurve"),
+  // Implementation ABIs: the interfaces plus every public getter.
+  junoFactoryAbi: read("JunoFactory.sol", "JunoFactory"),
+  junoCurveAbi: read("JunoCurve.sol", "JunoCurve"),
   curveMathAbi: read("IJuno.sol", "ICurveMath"),
   junoTokenAbi: read("JunoToken.sol", "JunoToken"),
   mockAggregatorAbi: read("MockAggregator.sol", "MockAggregator"),

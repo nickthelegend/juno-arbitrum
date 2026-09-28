@@ -296,11 +296,10 @@ contract JunoCurve is IJunoCurve, Initializable, ReentrancyGuardTransient {
         if (graduated) revert AlreadyGraduated();
         if (sold < curveSupply) revert NotFull();
         graduated = true;
-        JunoToken(token).markGraduated();
-
-        address quoteToken = quote == address(0) ? weth : quote;
         uint256 quoteAmount = quoteReserve;
         quoteReserve = 0;
+        address quoteToken = quote == address(0) ? weth : quote;
+        JunoToken(token).markGraduated();
         if (quote == address(0)) IWETH9(weth).deposit{value: quoteAmount}();
 
         uint256 tokenBalance = IERC20(token).balanceOf(address(this));

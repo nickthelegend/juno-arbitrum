@@ -1,0 +1,20 @@
+{
+  "name": "juno-arbitrum-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "diff-math": "tsx diff-curve-math.ts",
+    "feeds": "tsx keep-feeds-fresh.ts",
+    "smoke": "tsx smoke.ts",
+    "write-addresses": "tsx write-addresses.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "tsx": "^4.19.2",
+    "viem": "^2.38.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
+}

@@ -57,6 +57,8 @@ contract JunoFactory is IJunoFactory, Ownable {
         uniswapFactory = IUniswapV3Factory(uniswapFactory_);
         sequencerFeed = sequencerFeed_;
         treasury = treasury_;
+        if (weth_ == address(0) || positionManager_ == address(0) || uniswapFactory_ == address(0)) revert BadParams();
+        if (address(curveMath_) == address(0) || treasury_ == address(0)) revert BadParams();
         curveImpl = address(new JunoCurve());
 
         // content: cheap early, steep late. Posts and reels.
@@ -84,6 +86,7 @@ contract JunoFactory is IJunoFactory, Ownable {
     }
 
     function setTreasury(address treasury_) external onlyOwner {
+        if (treasury_ == address(0)) revert BadParams();
         treasury = treasury_;
         emit TreasurySet(treasury_);
     }
@@ -194,6 +197,8 @@ contract JunoFactory is IJunoFactory, Ownable {
     function _deploy(Deploy memory d) internal returns (address curve, address token) {
         curve = Clones.clone(curveImpl);
         token = address(new JunoToken(d.name, d.symbol, d.uri, d.supply, curve));
+        curves.push(curve);
+        curveOf[token] = curve;
         uint256 curveSupply = (d.supply * d.pr.curveSupplyPct) / 100;
 
         // The price the curve ends at is the price the pool opens at.
@@ -230,8 +235,6 @@ contract JunoFactory is IJunoFactory, Ownable {
             })
         );
 
-        curves.push(curve);
-        curveOf[token] = curve;
         emit Launched(
             curve,
             token,

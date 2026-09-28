@@ -146,6 +146,7 @@ export function usePrivyBridge(): PrivyBridge {
             data: tx.data,
             value: toHex(tx.value),
             chainId: toHex(tx.chainId),
+            ...(tx.gas ? { gas: toHex(tx.gas) } : {}),
           },
         ],
       });

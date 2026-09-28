@@ -37,7 +37,7 @@ contract JunoToken is ERC20, ERC20Burnable {
 
     function setPool(address pool_) external {
         if (msg.sender != factory) revert OnlyFactory();
-        if (pool != address(0)) revert PoolSet();
+        if (pool != address(0) || pool_ == address(0)) revert PoolSet();
         pool = pool_;
     }
 

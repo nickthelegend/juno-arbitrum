@@ -16,3 +16,5 @@ stylus/*/target/
 !docs/*.log
 .DS_Store
 .juno/
+config/addresses.local.json
+.venv-slither/

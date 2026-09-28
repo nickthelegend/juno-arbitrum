@@ -3,8 +3,10 @@ Write the HyperFrames composition for the Juno demo film.
 
     python3 scripts/demo/build_hf.py .juno/video/final/hf .juno/video/final/vo11
 
-Order: an optional cold-open film (assets/cat.mp4), the web app, the problem card, a
-phone fly-in opening, twelve feature chapters, how it's built, the end card.
+Order: a phone fly-in opening with the intro line, the problem card, the
+feature chapters, how it's built, the end card. A chapter is a phone (a
+recording of the live app), a terminal (real command output from the repo's
+proof scripts, typed in), or a browser window (a recording of an explorer).
 
 The chapter layout follows the reference the user chose: a dark stage, the
 phone alternating sides with a lime disc behind it, a 3D swing between
@@ -25,32 +27,47 @@ words = {k: json.load(open(f"{VO}/{k}.words.json")) for k in vo}
 INK, LIME, SAGE = "#12150E", "#D6FF3D", "#DCE6D4"
 
 CHAPTERS = [
-    ("c01", "A wallet in seconds", "Sign in with email. Privy creates an Ethereum wallet, with no seed phrase.",
-     ["Email sign-in, secured by Privy", "Embedded EVM wallet, made on sign-in", "Test ETH from the faucet, a name by signature"], ["Privy", "Arbitrum"]),
-    ("c02", "Every post has a price", "Buy the posts you believe in. The quote comes from the curve contract.",
-     ["Live quote, fee and price impact", "Signed on the phone, confirmed on Arbitrum", "Receipt with an Arbiscan link"], ["Arbitrum"]),
-    ("c03", "Reels are markets too", "Full-screen video, with the market right under the caption.",
-     ["Market cap and progress to graduation", "Buy and sell from the dock", "Likes stored against each wallet"], ["Arbitrum"]),
-    ("c04", "Real likes, real comments", "Every count is stored. Every name is claimed with a signature.",
-     ["Likes and comments from other wallets", "Names signed with EIP-191", "Nothing hardcoded"], ["Social"]),
-    ("c05", "Posting is launching", "Pick a photo, choose a curve shape, sign once. The market is live.",
-     ["Four shapes: Content, Thin name, IPO book, Tight NAV", "One factory call: token + curve", "Every step timestamped to the second"], ["Solidity", "IPFS"]),
-    ("c06", "Reels launch the same way", "Video in, market out, in one transaction.",
-     ["Video pinned to IPFS with a poster frame", "Launched by JunoFactory", "Straight into the swipe feed"], ["Solidity", "IPFS"]),
-    ("c07", "Creators get paid", "Every trade pays the creator. They claim it from the coin page.",
-     ["Half of every fee accrues to the creator", "claimCreatorFees(), creator only", "Receipt on screen"], ["Solidity"]),
-    ("c08", "Held to Chainlink, on-chain", "A stock tracker refuses any buy that would leave its band.",
-     ["Chainlink price read on every buy", "In-band buy: confirmed", "Out-of-band buy: OutsideBand, from the contract"], ["Chainlink"]),
-    ("c09", "Market closed, sells only", "A stale feed closes the market. Selling never stops.",
-     ["Staleness checked in the contract", "Buys refused: MarketClosed", "Sells always open"], ["Chainlink"]),
-    ("c10", "Graduation to Uniswap v3", "A filled curve moves its liquidity into a Uniswap v3 pool.",
-     ["graduate() is permissionless once full", "Full-range position, locked forever", "Trading continues on Uniswap"], ["Uniswap v3"]),
-    ("c11", "Curve maths in Stylus", "The pricing engine is a Rust program on Arbitrum Stylus.",
-     ["Sixteen segments, four measured shapes", "Matched a Solidity reference on 720 calls", "Deployed code rebuilt byte for byte"], ["Stylus", "Rust"]),
-    ("c12", "Live on Arbitrum One", "The same contracts, with a Tesla tracker on the real Chainlink feed.",
-     ["Factory, curve and Stylus maths on mainnet", "TSLA tracker against the real feed", "Out-of-band buy refused, proven with eth_call"], ["Arbitrum One", "Chainlink"]),
+    ("c01", "phone", "Every post is a market", "Each post is its own token and bonding curve, launched by one factory call.",
+     ["Token + curve + Uniswap pool in one transaction", "Priced by the Stylus curve maths", "Progress to graduation, live"], ["Arbitrum Sepolia"]),
+    ("c02", "phone", "Creators get paid", "Every trade pays the creator. Only the creator can claim it.",
+     ["Half of every fee accrues to the creator", "claimCreatorFees(), creator only", "Claimed on-chain on Sepolia"], ["Solidity"]),
+    ("c03", "phone", "Held to Chainlink", "Stock trackers, priced in dollars and held to Chainlink.",
+     ["TSLA, NVDA and AAPL feeds", "Price, age and market state", "A Juno curve per stock"], ["Chainlink"]),
+    ("c04", "phone", "The band lives in the contract", "Every buy reads the Chainlink price. The quote says no before you sign.",
+     ["$500: 1.41 jTSLA, 0.31% impact", "$9,500: more than 1% above Tesla", "Refused before signing"], ["Chainlink"]),
+    ("c05", "term", "Refused by the contract", "Not a UI rule: the curve contract reverts it.",
+     ["In-band buy: confirmed on Sepolia", "Big buy: OutsideBand", "Curve price, Chainlink price, band"], ["Solidity", "Chainlink"]),
+    ("c06", "phone", "Graduation to Uniswap v3", "A filled curve moves its liquidity into a Uniswap v3 pool.",
+     ["graduate() is permissionless once full", "Full-range position, locked forever", "Graduated on Sepolia: position #3803"], ["Uniswap v3"]),
+    ("c07", "term", "Curve maths in Stylus", "The pricing engine is a Rust program on Arbitrum Stylus.",
+     ["Matched a Solidity reference on 720 calls", "Rebuilt from source, byte for byte", "Reproduced in CI"], ["Stylus", "Rust"]),
+    ("c08", "browser", "Verified, end to end", "Every contract verified. Every step, a real transaction.",
+     ["Exact-match source verification", "Factory, curve, tokens, feeds", "All on Arbitrum Sepolia"], ["Blockscout", "Sourcify"]),
 
 ]
+
+# Real output of the repo's proof scripts (docs/sepolia-proof.log, scripts/diff-curve-math.ts,
+# scripts/stylus-match.sh). Lines starting with "$" are typed; "#" lines are annotations.
+TERMINALS = {
+    "c05": [
+        "$ npx tsx scripts/smoke.ts",
+        "TSLA reference $357.535",
+        "launch TSLA tracker (USDC)   tx 0xcbee770c…c14fef2",
+        "in-band buy $500             tx 0x93b9a914…6cf7d6  ✓",
+        "$9,500 buy refused by the contract:",
+        "  OutsideBand(361672101, 357535000, 100)",
+        "# curve $361.67 · Chainlink $357.54 · band 1%",
+    ],
+    "c07": [
+        "$ npx tsx scripts/diff-curve-math.ts 120",
+        "Stylus CurveMath == CurveMathRef on 720 calls (120 random curves)",
+        "$ bash scripts/stylus-match.sh",
+        "MATCH: deployment 0x62ccef11…41f6ef3b == local build",
+        "       (20519 bytes of initcode)",
+        "# stylus-verify on a fresh macOS runner: success",
+    ],
+}
+BROWSER_URL = {"c08": "arbitrum-sepolia.blockscout.com/address/0xBc89…E87a"}
 
 LOGO = ('<svg viewBox="0 0 48 48" fill="none"><path d="M9 38.5C9 38.5 18 36.5 24 30C29 24.6 30.5 18.5 30.5 18.5" '
         'stroke="{c}" stroke-width="5" stroke-linecap="round"/><circle cx="36.5" cy="10.5" r="4.8" fill="{c}"/></svg>')
@@ -64,11 +81,10 @@ SW, SH = round(1206 * S, 1), round(2622 * S, 1)
 PHONE_TOP = 48
 
 # ------------------------------------------------------------------ timing
-T = {"cat": (0.0, 20.0), "web": (20.0, 10.0)}
-T["prob"] = (30.0, round(vo["problem"] + 2.4, 2))
-t = T["prob"][0] + T["prob"][1]
-T["hero"] = (round(t, 2), 4.6)
-t += 4.6
+T = {"hero": (0.0, round(max(4.6, vo["intro"] + 1.6), 2))}
+t = T["hero"][1]
+T["prob"] = (round(t, 2), round(vo["problem"] + 2.4, 2))
+t += T["prob"][1]
 for cid, *_ in CHAPTERS:
     T[cid] = (round(t, 2), plan[cid]["len"])
     t += plan[cid]["len"]
@@ -76,7 +92,7 @@ T["stack"] = (round(t, 2), round(vo["stack"] + 2.6, 2))
 t += T["stack"][1]
 T["outro"] = (round(t, 2), 7.0)
 TOTAL = round(t + 7.0, 2)
-VO_AT = {"intro": T["web"][0] + 0.8, "problem": T["prob"][0] + 0.8, "stack": T["stack"][0] + 0.9, "outro": T["outro"][0] + 0.8}
+VO_AT = {"intro": T["hero"][0] + 0.7, "problem": T["prob"][0] + 0.8, "stack": T["stack"][0] + 0.9, "outro": T["outro"][0] + 0.8}
 for cid, *_ in CHAPTERS:
     VO_AT[cid] = T[cid][0] + 0.6
 
@@ -97,23 +113,6 @@ def split_chars(text, prefix):
         out.append(f'<span class="wd">{letters}</span>')
     return " ".join(out), n
 
-
-# ------------------------------------------------------------------ cat film
-parts.append(f'<video id="cat" class="clip full" data-start="0" data-duration="20" src="assets/cat.mp4" muted playsinline></video>')
-parts.append('<audio id="cat-audio" data-start="0" data-duration="20" data-volume="1" data-fade-out="0.4" src="assets/audio/cat.wav"></audio>')
-
-# ------------------------------------------------------------------ website
-s, d = T["web"]
-parts.append(f"""
-<div id="web" class="clip scene" data-start="{s}" data-duration="{d}" style="background:{SAGE}">
-  <div id="web-window" class="browser">
-    <div class="bar"><span class="dot" style="background:#FF5F57"></span><span class="dot" style="background:#FEBC2E"></span><span class="dot" style="background:#28C840"></span>
-      <div class="url">juno-arb-app.vercel.app</div></div>
-    <div class="viewport"><img id="web-shot" src="assets/landing-full.png" alt="Juno landing page"></div>
-  </div>
-</div>""")
-tl.append(f'tl.fromTo("#web-window", {{opacity: 0, scale: 0.94, y: 30}}, {{opacity: 1, scale: 1, y: 0, duration: 0.7, ease: "power3.out"}}, {at("web", 0.05)});')
-tl.append(f'tl.fromTo("#web-shot", {{y: 0}}, {{y: -4110, duration: 8.6, ease: "power1.inOut"}}, {at("web", 0.8)});')
 
 # ------------------------------------------------------------------ problem
 s, d = T["prob"]
@@ -140,8 +139,8 @@ s, d = T["hero"]
 parts.append(f"""
 <div id="hero" class="clip scene dark" data-start="{s}" data-duration="{d}">
   <div class="disc" id="hero-disc" style="left:{960 - 430}px; top:{540 - 430 - 30}px; width:860px; height:860px"></div>
-  <img class="card" id="hero-card-l" src="assets/poster-NEON.jpg" alt="City After Rain reel">
-  <img class="card" id="hero-card-r" src="assets/poster-KICK.jpg" alt="Park Session reel">
+  <img class="card" id="hero-card-l" src="assets/card-stocks.png" alt="Juno stocks">
+  <img class="card" id="hero-card-r" src="assets/card-graduated.png" alt="A graduated Juno market">
   <div class="phone" id="hero-phone" style="left:{960 - PW / 2}px; top:{PHONE_TOP}px">
     <img class="screen" src="assets/hero-screen.png" alt="Juno feed">
     <img class="frame" src="assets/phone-frame.png" alt="">
@@ -156,7 +155,7 @@ tl.append(f'tl.to("#hero-phone", {{x: -400, rotationY: 35, opacity: 0, duration:
 tl.append(f'tl.to("#hero-disc", {{scale: 0, duration: 0.4, ease: "power2.in"}}, {at("hero", d - 0.45)});')
 
 # ------------------------------------------------------------------ chapters
-for n, (cid, title, body, facts, chips) in enumerate(CHAPTERS):
+for n, (cid, kind, title, body, facts, chips) in enumerate(CHAPTERS):
     s, d = T[cid]
     left = n % 2 == 0  # phone on the left for even chapters, like the reference
     pcx = 560 if left else 1360
@@ -178,11 +177,28 @@ for n, (cid, title, body, facts, chips) in enumerate(CHAPTERS):
     <div class="facts">{fact_html}</div>
   </div>
 </div>""")
-    # the phone: untimed wrappers (animated), the timed video inside the screen hole
-    parts.append(
-        f'<div class="phone" id="{cid}-phone" style="left:{pcx - PW / 2}px; top:{PHONE_TOP}px; z-index:{20 + n}">'
-        f'<video id="{cid}-video" class="clip screen-video" data-start="{s}" data-duration="{d}" src="assets/clips/{cid}.mp4" muted playsinline></video>'
-        f'<img class="frame" src="assets/phone-frame.png" alt=""></div>')
+    if kind == "phone":
+        # the phone: untimed wrappers (animated), the timed video inside the screen hole
+        parts.append(
+            f'<div class="phone" id="{cid}-phone" style="left:{pcx - PW / 2}px; top:{PHONE_TOP}px; z-index:{20 + n}">'
+            f'<video id="{cid}-video" class="clip screen-video" data-start="{s}" data-duration="{d}" src="assets/clips/{cid}.mp4" muted playsinline></video>'
+            f'<img class="frame" src="assets/phone-frame.png" alt=""></div>')
+    else:
+        # a card where the phone would be: a terminal or a browser window
+        card_left = 70 if left else 1030
+        if kind == "term":
+            rows = []
+            for i, line in enumerate(TERMINALS[cid]):
+                cls = "cmd" if line.startswith("$") else ("note" if line.startswith("#") else "out")
+                rows.append(f'<div class="trow {cls}" id="{cid}-l{i}"><span class="ttext" id="{cid}-x{i}">{esc(line)}</span></div>')
+            inner = f'<div class="tbar"><span class="dot" style="background:#FF5F57"></span><span class="dot" style="background:#FEBC2E"></span><span class="dot" style="background:#28C840"></span><span class="ttitle">juno-arbitrum</span></div><div class="tbody">{"".join(rows)}</div>'
+            parts.append(f'<div class="card-win term" id="{cid}-phone" style="left:{card_left}px; z-index:{20 + n}">{inner}</div>')
+        else:
+            parts.append(
+                f'<div class="card-win web" id="{cid}-phone" style="left:{card_left}px; z-index:{20 + n}">'
+                f'<div class="bar"><span class="dot" style="background:#FF5F57"></span><span class="dot" style="background:#FEBC2E"></span><span class="dot" style="background:#28C840"></span>'
+                f'<div class="url small">{esc(BROWSER_URL[cid])}</div></div>'
+                f'<video id="{cid}-video" class="clip web-video" data-start="{s}" data-duration="{d}" src="assets/clips/{cid}.mp4" muted playsinline></video></div>')
     enter_x = 520 if left else -520
     exit_x = 420 if left else -420
     tl.append(f'tl.fromTo("#{cid}-phone", {{x: {enter_x}, rotationY: {-38 if left else 38}, scale: 0.86, opacity: 0}}, '
@@ -193,6 +209,19 @@ for n, (cid, title, body, facts, chips) in enumerate(CHAPTERS):
     tl.append(f'tl.fromTo("#{cid}-body", {{opacity: 0, y: 22}}, {{opacity: 1, y: 0, duration: 0.5, ease: "power3.out"}}, {at(cid, 0.35 + nchars * 0.022 + 0.1)});')
     for i in range(len(facts)):
         tl.append(f'tl.fromTo("#{cid}-f{i}", {{opacity: 0, x: {-20 if not left else 20}}}, {{opacity: 1, x: 0, duration: 0.4, ease: "power2.out"}}, {at(cid, 1.3 + i * 0.25)});')
+    if kind == "term":
+        lines = TERMINALS[cid]
+        at_t = 0.9
+        span = max(d - 3.0, 4.0)
+        per = span / len(lines)
+        for i, line in enumerate(lines):
+            if line.startswith("$"):
+                n_ch = len(line)
+                tl.append(f'tl.fromTo("#{cid}-l{i}", {{opacity: 0}}, {{opacity: 1, duration: 0.01}}, {at(cid, at_t)});')
+                tl.append(f'tl.fromTo("#{cid}-x{i}", {{clipPath: "inset(0 100% 0 0)"}}, {{clipPath: "inset(0 0% 0 0)", duration: {round(min(1.1, n_ch * 0.03), 2)}, ease: "steps({n_ch})"}}, {at(cid, at_t)});')
+            else:
+                tl.append(f'tl.fromTo("#{cid}-l{i}", {{opacity: 0, y: 6}}, {{opacity: 1, y: 0, duration: 0.25}}, {at(cid, at_t)});')
+            at_t += per
     tl.append(f'tl.to("#{cid}-col", {{opacity: 0, y: -14, duration: 0.3, ease: "power1.in"}}, {round(s + d - 0.4, 2)});')
     tl.append(f'tl.to("#{cid}-disc", {{scale: 0, duration: 0.4, ease: "power2.in"}}, {round(s + d - 0.45, 2)});')
     tl.append(f'tl.to("#{cid}-phone", {{x: {exit_x}, rotationY: {32 if left else -32}, scale: 0.9, opacity: 0, duration: 0.45, ease: "power2.in"}}, {round(s + d - 0.45, 2)});')
@@ -203,7 +232,7 @@ cards = [("One app, three platforms", "Expo on iOS, Android and the web."),
          ("Wallets by Privy", "The server builds each transaction. The Privy wallet signs it."),
          ("Solidity + Stylus", "A Solidity launchpad; the curve maths in Rust on Stylus."),
          ("Real reference prices", "Chainlink for stocks, Uniswap v3 at graduation, IPFS for media.")]
-stats = [("31", "Foundry tests on a fork"), ("32,768", "invariant calls"), ("132", "server tests"), ("3", "platforms")]
+stats = [("31", "Foundry tests on a fork"), ("32,768", "invariant calls"), ("135", "server tests"), ("720", "Stylus = Solidity calls")]
 parts.append(f"""
 <div id="stack" class="clip scene dark" data-start="{s}" data-duration="{d}">
   <div class="stack-wrap" id="stack-wrap">
@@ -265,7 +294,7 @@ for key, start in VO_AT.items():
             tl.append(f'tl.set("#{cap_id}-{j}", {{color: "{LIME}"}}, {round(start + ws[i]["s"], 3)});')
 
 # ------------------------------------------------------------------ music
-parts.append(f'<audio id="music" data-start="20" data-duration="{round(TOTAL - 20, 2)}" data-volume="0.9" data-fade-in="1.5" data-fade-out="4" src="assets/audio/music-bed.wav"></audio>')
+parts.append(f'<audio id="music" data-start="0" data-duration="{round(TOTAL, 2)}" data-volume="0.9" data-fade-in="1.5" data-fade-out="4" src="assets/audio/music-bed.wav"></audio>')
 
 CSS = f"""
 @font-face {{ font-family: "Plus Jakarta Sans"; src: url("fonts/jakarta-400.woff2") format("woff2"); font-weight: 200 800; font-style: normal; }}
@@ -294,6 +323,20 @@ html, body {{ margin: 0; width: 1920px; height: 1080px; overflow: hidden; backgr
 .phone .frame {{ position: absolute; left: 0; top: 0; width: {PW}px; height: {PH}px; display: block; }}
 .phone .screen, .phone .screen-video {{ position: absolute; left: {HOLE}px; top: {HOLE}px; right: auto; bottom: auto; width: {SW}px; height: {SH}px; object-fit: fill; display: block; border-radius: 46px; }}
 .col {{ position: absolute; top: 230px; width: 830px; }}
+.card-win {{ position: absolute; top: 250px; width: 820px; border-radius: 20px; overflow: hidden; transform-origin: 50% 50%; box-shadow: 0 40px 90px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06); }}
+.card-win.term {{ background: #0B0D09; height: 520px; }}
+.card-win.web {{ background: #fff; height: 556px; }}
+.card-win .bar {{ height: 44px; }}
+.url.small {{ margin-left: 90px; width: 560px; height: 28px; font-size: 15px; }}
+.web-video {{ position: absolute; left: 0; top: 44px; width: 820px; height: 512px; object-fit: cover; display: block; }}
+.tbar {{ height: 44px; background: #1A1E16; display: flex; align-items: center; gap: 10px; padding: 0 20px; }}
+.ttitle {{ margin-left: 250px; font-size: 16px; font-weight: 700; color: #8B9683; }}
+.tbody {{ padding: 30px 32px; font-family: "SF Mono", Menlo, monospace; font-size: 19px; line-height: 1.8; }}
+.trow {{ white-space: pre; opacity: 0; }}
+.trow .ttext {{ display: inline-block; }}
+.trow.cmd {{ color: {LIME}; font-weight: 700; }}
+.trow.out {{ color: #E6ECE0; }}
+.trow.note {{ color: #A9B4A2; }}
 .chips {{ display: flex; gap: 12px; margin-bottom: 28px; }}
 .chip {{ font-size: 20px; font-weight: 700; color: {LIME}; border: 2px solid {LIME}; border-radius: 999px; padding: 6px 18px; }}
 .title {{ font-size: 88px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.04; margin-bottom: 26px; color: #F7FAF3; }}

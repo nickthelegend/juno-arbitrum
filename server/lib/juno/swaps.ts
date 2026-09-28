@@ -5,7 +5,7 @@ import type { PricePoint, TradeSide } from "./types";
 /**
  * Trades as the maths wants them.
  *
- * On Solana a fill had to be decoded from vault deltas; on Arbitrum the curve
+ * A fill no longer has to be decoded from balance changes: the curve
  * emits a `Trade` event with the exact amounts, and the indexer writes it to
  * `juno_trades`. This module turns those rows into decimal numbers and derives
  * the series every surface uses — volume, the 24h change, the chart.

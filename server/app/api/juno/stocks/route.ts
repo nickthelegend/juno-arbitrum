@@ -12,7 +12,7 @@ export const OPTIONS = junoOptions;
 /**
  * The Chainlink stock references and the trackers held to each, as a plain
  * array: `[{ symbol, name, feed, price, updatedAt, ageSeconds, marketOpen,
- * trackers: Coin[] }]`. Replaces the Solana `tessera` route.
+ * trackers: Coin[] }]`.
  *
  * The references are live even before Juno is deployed on a chain (Arbitrum
  * One has real feeds); trackers need the factory.

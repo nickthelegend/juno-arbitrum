@@ -30,7 +30,7 @@ contract CurveMathRef is ICurveMath {
     error BadCap();
     error Exceeds();
 
-    /// @dev Liquidity weights x1e6, from the Solana presets (lib/juno/curves.ts):
+    /// @dev Liquidity weights x1e6, the four Juno presets:
     /// 0 content 1.2^i, 1 thin-name 0.82^i, 2 ipo-book 0.25 + 0.75 t^2, 3 tight-nav flat.
     function _weight(uint8 preset, uint256 i) internal pure returns (uint256) {
         if (preset == 0) {

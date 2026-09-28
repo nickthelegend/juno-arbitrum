@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Juno",
+    "slug": "juno",
+    "version": "1.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.launch.juno"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "app.launch.juno",
+      "versionCode": 110
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-video",
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Juno uses your photos and videos so you can launch them as a post or a reel."
+        }
+      ],
+      "./plugins/withQuotedBundleScript"
+    ],
+    "scheme": "juno",
+    "backgroundColor": "#D3E3CB",
+    "description": "Every post is a market: photos and reels launch their own Meteora bonding curves on Solana."
+  }
+}

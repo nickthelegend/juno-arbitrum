@@ -1,0 +1,34 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://juno-web-production-bd2e.up.railway.app",
+        "EXPO_PUBLIC_APP_URL": "https://juno-app-chi.vercel.app"
+      },
+      "android": { "buildType": "apk" },
+      "ios": { "simulator": false }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://juno-web-production-bd2e.up.railway.app",
+        "EXPO_PUBLIC_APP_URL": "https://juno-app-chi.vercel.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {},
+      "android": { "track": "internal" }
+    }
+  }
+}

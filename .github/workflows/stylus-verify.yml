@@ -2,6 +2,10 @@
 # initcode from this repo with the pinned toolchain and compare it byte for
 # byte with the deployment transaction (scripts/stylus-match.sh). Fails on any
 # difference.
+#
+# The WASM embeds dependency source paths in its panic locations, so the
+# rebuild uses the same CARGO_HOME path as the machine that deployed it
+# (/Users/jaibajrang/.cargo). Nothing else about the host matters.
 name: stylus-verify
 on:
   workflow_dispatch:
@@ -17,8 +21,15 @@ on:
 jobs:
   match:
     runs-on: ubuntu-latest
+    env:
+      CARGO_HOME: /Users/jaibajrang/.cargo
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install --locked cargo-stylus --version 0.10.9
+      - run: |
+          sudo mkdir -p /Users/jaibajrang && sudo chown "$USER" /Users/jaibajrang
+          cp -r ~/.cargo "$CARGO_HOME"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+      - run: |
+          rustup toolchain install 1.91.0 --profile minimal --target wasm32-unknown-unknown
+          cargo +1.91.0 install --locked cargo-stylus --version 0.10.9
       - run: bash scripts/stylus-match.sh "${{ inputs.deployment_tx || '0x62ccef112150c59e5df0de6a7d987f4a81f4228279e5847ebf20138441f6ef3b' }}" "${{ inputs.rpc || 'https://sepolia-rollup.arbitrum.io/rpc' }}"

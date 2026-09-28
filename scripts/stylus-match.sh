@@ -8,7 +8,9 @@
 #
 # The Sepolia program was deployed from a native build (`cargo stylus deploy
 # --no-verify`), so `cargo stylus verify`, which rebuilds inside Docker, does
-# not apply to it; this native comparison does.
+# not apply to it; this native comparison does. The WASM embeds dependency
+# source paths (panic locations), so the rebuild must use the deploying
+# machine's CARGO_HOME path, /Users/jaibajrang/.cargo; CI recreates it.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TX="${1:-0x62ccef112150c59e5df0de6a7d987f4a81f4228279e5847ebf20138441f6ef3b}"

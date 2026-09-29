@@ -17,7 +17,7 @@ const CORS_HEADERS: Record<string, string> = {
   // every transaction is signed and sent by a key this server never sees.
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
-  "Access-Control-Allow-Headers": "content-type,x-juno-index-secret",
+  "Access-Control-Allow-Headers": "content-type,authorization,x-juno-index-secret",
   "Access-Control-Max-Age": "86400",
 };
 

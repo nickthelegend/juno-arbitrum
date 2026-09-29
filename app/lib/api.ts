@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import { File as DeviceFile } from "expo-file-system";
 
 import { CHAIN_ID, explorer } from "./chain";
+import { forgetSession, sessionHeaders } from "./session";
 
 /**
  * The Juno API client.
@@ -163,6 +164,25 @@ export const api = {
   patch: <T>(path: string, body: unknown, timeoutMs?: number) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body), timeoutMs }),
 };
+
+/**
+ * A write stored against a wallet (a like, comment, follow, watch, plan, post,
+ * pin): it carries that wallet's session (see ./session). A session the
+ * server no longer accepts is dropped and signed afresh, once.
+ */
+async function authed<T>(method: "POST" | "PATCH", path: string, body: unknown, wallet?: string): Promise<T> {
+  const send = async () =>
+    request<T>(path, { method, body: JSON.stringify(body), headers: await sessionHeaders(wallet) });
+  try {
+    return await send();
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401 && (error.body as { reason?: string } | null)?.reason === "NoSession") {
+      await forgetSession(wallet);
+      return send();
+    }
+    throw error;
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Shapes, mirroring the server's own types                            */
@@ -406,6 +426,8 @@ export type DepthPoint = {
   /** The part the curve caused, fee excluded. */
   curveImpact: number;
   fee: number;
+  /** The contract would take this trade now (a tracker's band and market state). */
+  allowed?: boolean;
 };
 
 /** One transaction the server built, for the wallet to send in order. */
@@ -580,9 +602,11 @@ export const juno = {
     }>(`/api/juno/follow?wallet=${wallet}${viewer ? `&viewer=${viewer}` : ""}`),
 
   setFollow: (follower: string, target: string, on: boolean) =>
-    api.post<{ target: string; isFollowing: boolean; followers: number; following: number }>(
+    authed<{ target: string; isFollowing: boolean; followers: number; following: number }>(
+      "POST",
       "/api/juno/follow",
       { follower, target, follow: on },
+      follower,
     ),
 
   /**
@@ -614,7 +638,7 @@ export const juno = {
     watch: boolean;
     alertPrice?: number;
     priceNow?: number;
-  }) => api.post<{ baseMint: string; watching: boolean }>("/api/juno/watchlist", input),
+  }) => authed<{ baseMint: string; watching: boolean }>("POST", "/api/juno/watchlist", input, input.wallet),
 
   plans: (wallet: string) =>
     api.get<{ wallet: string; plans: Plan[]; missing: number }>(`/api/juno/plans?wallet=${wallet}`),
@@ -625,14 +649,14 @@ export const juno = {
     amount: number;
     cadence: "daily" | "weekly" | "monthly";
     target?: number | null;
-  }) => api.post<{ id: string }>("/api/juno/plans", input),
+  }) => authed<{ id: string }>("POST", "/api/juno/plans", input, input.wallet),
 
   /** Called only after a swap confirms, so progress records real transactions. */
   recordContribution: (id: string, contributed: number) =>
-    api.patch<{ plan: Plan }>("/api/juno/plans", { id, contributed }),
+    authed<{ plan: Plan }>("PATCH", "/api/juno/plans", { id, contributed }),
 
   setPlanActive: (id: string, active: boolean) =>
-    api.patch<{ id: string; active: boolean }>("/api/juno/plans", { id, active }),
+    authed<{ id: string; active: boolean }>("PATCH", "/api/juno/plans", { id, active }),
 
   /**
    * The feed, optionally narrowed to wallets `following` follows.
@@ -689,7 +713,7 @@ export const juno = {
     ),
 
   setLike: (input: { coin: string; wallet: string; like: boolean }) =>
-    api.post<{ coin: string; likes: number; liked: boolean }>("/api/juno/likes", input),
+    authed<{ coin: string; likes: number; liked: boolean }>("POST", "/api/juno/likes", input, input.wallet),
 
   coin: (token: string) =>
     api.get<{
@@ -727,11 +751,16 @@ export const juno = {
     side?: "buy" | "sell";
     txHash?: string;
   }) =>
-    api.post<{ comment: CoinComment }>("/api/juno/comments", {
-      ...input,
-      // The stored row keeps the field name it has always had.
-      ...(input.txHash ? { signature: input.txHash } : {}),
-    }),
+    authed<{ comment: CoinComment }>(
+      "POST",
+      "/api/juno/comments",
+      {
+        ...input,
+        // The stored row keeps the field name it has always had.
+        ...(input.txHash ? { signature: input.txHash } : {}),
+      },
+      input.wallet,
+    ),
 
   /**
    * What this curve can absorb, and the largest trade inside an impact budget.
@@ -768,7 +797,7 @@ export const juno = {
     baseMint?: string | null;
     /** Set to reply. A comment is a post with a parent. */
     parentId?: string | null;
-  }) => api.post<{ post: { id: string } }>("/api/juno/posts", input),
+  }) => authed<{ post: { id: string } }>("POST", "/api/juno/posts", input, input.authorWallet),
 
   post: (id: string) =>
     api.get<{
@@ -822,6 +851,8 @@ export const juno = {
         method: "POST",
         body: form,
         signal: controller.signal,
+        // Pinning is for signed-in wallets: the connected wallet's session.
+        headers: await sessionHeaders(),
       });
       const body = (await response.json().catch(() => null)) as
         | {
@@ -888,7 +919,7 @@ export const juno = {
     mediaMime?: string;
     width?: number | null;
     height?: number | null;
-  }) => api.post<{ uri: string }>("/api/juno/metadata", input),
+  }) => authed<{ uri: string }>("POST", "/api/juno/metadata", input),
 
   /** A quote, and the steps that trade it. Amounts are decimal strings in UI units. */
   buildSwap: (

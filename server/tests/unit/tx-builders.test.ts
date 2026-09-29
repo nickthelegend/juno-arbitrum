@@ -244,14 +244,30 @@ describe("buildSwap: buys", () => {
     expect(build.quote).toMatchObject({ exactOut: true, amountIn: 0.02, maximumAmountIn: 0.0202 });
   });
 
-  it("refuses a buy the wallet cannot pay for, counting the gas reserve", async () => {
+  it("refuses a buy the wallet can pay for but not its gas", async () => {
     mocks.quoteBuy.mockResolvedValue(buyQuote());
-    mocks.ethBalance.mockResolvedValue(parseEther("0.0102"));
+    // 0.01 ETH buy + 130,000 gas at 0.1 gwei (0.000013 ETH) = 0.010013 ETH needed.
+    mocks.ethBalance.mockResolvedValue(parseEther("0.010005"));
     const error = await rejection(buildSwap({ chainId: 421614, row: row(), trader: TRADER, side: "buy", amountIn: "0.01" }));
     expect(error).toBeInstanceOf(CallerError);
     expect(error.status).toBe(400);
     expect(error.message).toMatch(/Not enough ETH/);
+    expect(error.extra.needed).toBe(0.010013);
+  });
+
+  it("refuses a buy larger than the balance before simulating anything", async () => {
+    mocks.quoteBuy.mockResolvedValue(buyQuote());
+    mocks.ethBalance.mockResolvedValue(parseEther("0.005"));
+    const error = await rejection(buildSwap({ chainId: 421614, row: row(), trader: TRADER, side: "buy", amountIn: "0.01" }));
+    expect(error.message).toMatch(/Not enough ETH/);
     expect(mocks.simulateContract).not.toHaveBeenCalled();
+  });
+
+  it("builds a buy for a wallet holding only the buy plus its real gas (no flat reserve)", async () => {
+    mocks.quoteBuy.mockResolvedValue(buyQuote());
+    mocks.ethBalance.mockResolvedValue(parseEther("0.010014"));
+    const build = await buildSwap({ chainId: 421614, row: row(), trader: TRADER, side: "buy", amountIn: "0.01" });
+    expect(build.steps).toHaveLength(1);
   });
 
   it("refuses a tracker buy the contract would reject for the band or a stale feed", async () => {

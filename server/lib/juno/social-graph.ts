@@ -238,6 +238,13 @@ export async function plans(chainId: ChainId, walletInput: string): Promise<Plan
   return rows.map((row) => shapePlan(row, now));
 }
 
+/** The wallet that owns a plan, or null. A malformed id is simply not found. */
+export async function planOwner(id: string): Promise<string | null> {
+  if (!/^[0-9a-f-]{8,64}$/i.test(id)) return null;
+  const [row] = await getDb().select({ wallet: junoPlans.wallet }).from(junoPlans).where(eq(junoPlans.id, id)).limit(1);
+  return row?.wallet ?? null;
+}
+
 export async function setPlanActive(id: string, active: boolean): Promise<boolean> {
   const rows = await getDb().update(junoPlans).set({ active }).where(eq(junoPlans.id, id)).returning({ id: junoPlans.id });
   return rows.length > 0;

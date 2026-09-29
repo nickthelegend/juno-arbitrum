@@ -3,7 +3,8 @@ import { CallerError, junoError, junoHandler, junoJson, junoOptions, readJson, r
 import { hydrateCurves } from "@/lib/juno/chain";
 import { chainIdFromUrl, deployment, resolveChainId } from "@/lib/juno/chains";
 import { getCurve, getCurves } from "@/lib/juno/registry";
-import { createPlan, deletePlan, plans, recordContribution, setPlanActive } from "@/lib/juno/social-graph";
+import { requireSession } from "@/lib/juno/session";
+import { createPlan, deletePlan, planOwner, plans, recordContribution, setPlanActive } from "@/lib/juno/social-graph";
 import type { Coin } from "@/lib/juno/types";
 
 export const runtime = "nodejs";
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
     const body = await readJson<Record<string, unknown>>(request);
     const chainId = resolveChainId(body.chainId);
     const wallet = normAddress(body.wallet, "wallet");
+    requireSession(request, wallet);
     const token = normAddress(body.baseMint ?? body.token, "baseMint");
     const amount = requireNumber(body.amount, "amount");
     const cadence = requireString(body.cadence, "cadence");
@@ -83,6 +85,7 @@ export async function PATCH(request: Request) {
   return junoHandler(async () => {
     const body = await readJson<Record<string, unknown>>(request);
     const id = requireString(body.id, "id");
+    await requirePlanOwner(request, id);
     if (body.contributed !== undefined) {
       const amount = requireNumber(body.contributed, "contributed");
       if (amount <= 0) return junoError("A contribution must be greater than zero");
@@ -103,7 +106,16 @@ export async function DELETE(request: Request) {
   return junoHandler(async () => {
     const id = new URL(request.url).searchParams.get("id") ?? "";
     if (!id) return junoError("An id is required");
+    await requirePlanOwner(request, id);
     if (!(await deletePlan(id))) return junoError("Plan not found", 404);
     return junoJson({ id, deleted: true });
   });
+}
+
+/** A plan can only be changed by the wallet that made it. 404 before 403: no probing ids. */
+async function requirePlanOwner(request: Request, id: string): Promise<void> {
+  const session = requireSession(request);
+  const owner = await planOwner(id);
+  if (!owner) throw new CallerError("Plan not found", 404);
+  if (owner !== session.wallet) throw new CallerError("This plan belongs to a different wallet.", 403, { reason: "WrongWallet" });
 }

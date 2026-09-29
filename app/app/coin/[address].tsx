@@ -42,6 +42,8 @@ import {
   describeTxError,
   displayAddress,
   explorer,
+  FEED_NOTE,
+  FEED_SOURCE,
   NETWORK_NAME,
   sameAddress,
   shortAddress,
@@ -1009,7 +1011,7 @@ function NavBand({ nav, feed }: { nav: NavReference; feed: string | null }) {
   return (
     <Card style={{ marginTop: 14 }}>
       <Row justify="space-between">
-        <Label style={{ fontWeight: "700" }}>{nav.symbol} · Chainlink</Label>
+        <Label style={{ fontWeight: "700" }}>{nav.symbol} · {FEED_SOURCE}</Label>
         <Caption style={{ color: nav.marketOpen ? theme.colors.pos : theme.colors.neg, fontWeight: "700" }}>
           {nav.marketOpen ? "Market open" : "Market closed · sells only"}
         </Caption>
@@ -1041,6 +1043,7 @@ function NavBand({ nav, feed }: { nav: NavReference; feed: string | null }) {
         {nav.marketOpen
           ? `The curve contract checks ${nav.symbol}'s Chainlink price on every buy and refuses one that would take the curve more than ${band}% above it. Sells are never blocked.`
           : `${nav.symbol}'s Chainlink price is stale — the exchange is closed — so the contract refuses buys until it updates. You can still sell.`}
+        {FEED_NOTE ? ` ${FEED_NOTE}` : ""}
       </Caption>
 
       {feed ? (

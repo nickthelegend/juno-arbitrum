@@ -2,6 +2,7 @@ import { maybeAddress, normAddress } from "@/lib/juno/address";
 import { junoHandler, junoJson, junoOptions, readJson, requireString } from "@/lib/juno/api";
 import { chainIdFromUrl, resolveChainId } from "@/lib/juno/chains";
 import { createPost, listPosts } from "@/lib/juno/posts";
+import { requireSession } from "@/lib/juno/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,17 +24,18 @@ export async function GET(request: Request) {
 }
 
 /**
- * Write a post. The author is whatever wallet the client says: a post is
- * public, unprivileged text, and gating it behind a signature would mean a
- * wallet prompt to write a sentence.
+ * Write a post, as the wallet whose session the request carries: the author
+ * is proven, but by the one session signature rather than a prompt per post.
  */
 export async function POST(request: Request) {
   return junoHandler(async () => {
     const body = await readJson<Record<string, unknown>>(request);
     const tokenInput = body.token ?? body.baseMint;
+    const authorWallet = normAddress(body.authorWallet, "authorWallet");
+    requireSession(request, authorWallet);
     const post = await createPost({
       chainId: resolveChainId(body.chainId),
-      authorWallet: normAddress(body.authorWallet, "authorWallet"),
+      authorWallet,
       body: requireString(body.body, "body"),
       token: tokenInput ? normAddress(tokenInput, "token") : null,
       mediaUrl: typeof body.mediaUrl === "string" ? body.mediaUrl : null,

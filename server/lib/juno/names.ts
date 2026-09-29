@@ -62,6 +62,6 @@ export async function verifyNameClaim(
   if (!valid && options.fallbackVerify) {
     valid = await options.fallbackVerify({ address: wallet, message, signature }).catch(() => false);
   }
-  if (!valid) throw new CallerError("The signature does not match this wallet.");
+  if (!valid) throw new CallerError("The signature does not match this wallet.", 401, { reason: "BadSignature" });
   return { wallet, name, nameKey: key };
 }

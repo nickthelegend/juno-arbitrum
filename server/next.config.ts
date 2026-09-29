@@ -25,6 +25,13 @@ const nextConfig: NextConfig = {
   // environment (set with scripts/vercel-secrets.sh), not from the bundle.
   outputFileTracingExcludes: {
     "*": ["**/.env", "**/.env.*"],
+    // Functions run on linux-arm64 (scripts/deploy-api.sh installs those
+    // binaries before building); the macOS ones would only add weight.
+    "/api/juno/upload": [
+      "./node_modules/@ffmpeg-installer/darwin-*/**",
+      "./node_modules/@ffprobe-installer/darwin-*/**",
+      "./node_modules/@img/*darwin*/**",
+    ],
   },
   outputFileTracingIncludes: {
     "/api/juno/upload": [

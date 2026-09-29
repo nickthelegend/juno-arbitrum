@@ -1,4 +1,4 @@
-import { isAddr } from "@/lib/juno/address";
+import { addressList } from "@/lib/juno/address";
 import { junoHandler, junoJson, junoOptions, readJson, requireString } from "@/lib/juno/api";
 import { chainIdFromUrl, resolveChainId } from "@/lib/juno/chains";
 import { claimName, namesFor } from "@/lib/juno/profiles";
@@ -11,11 +11,7 @@ export const OPTIONS = junoOptions;
 export async function GET(request: Request) {
   return junoHandler(async () => {
     const url = new URL(request.url);
-    const wallets = (url.searchParams.get("wallets") ?? "")
-      .split(",")
-      .filter(isAddr)
-      .map((wallet) => wallet.toLowerCase())
-      .slice(0, 100);
+    const wallets = addressList(url.searchParams.get("wallets"), "wallets", 100);
     return junoJson({ names: await namesFor(wallets, chainIdFromUrl(url)) });
   });
 }

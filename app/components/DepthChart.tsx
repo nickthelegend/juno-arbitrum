@@ -50,11 +50,19 @@ export function DepthChart({ mint }: { mint: string }) {
   }
 
   const readout = pick(points);
+  // A tracker refuses buys past its band: the first size the contract would refuse.
+  const refusedFrom = points.find((p) => p.allowed === false);
 
   return (
     <Box>
       <Title>What a buy moves the price</Title>
       <Muted>Quoted against the live curve · fee excluded</Muted>
+      {refusedFrom ? (
+        <Warn>
+          From about {money(refusedFrom.amountIn * rate, "USD", { compact: true })} the contract refuses the buy: it
+          would leave the stock's band.
+        </Warn>
+      ) : null}
       <Plot onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
         {width > 0 ? <Chart points={points} width={width} /> : null}
       </Plot>
@@ -68,7 +76,7 @@ export function DepthChart({ mint }: { mint: string }) {
       <Readout>
         {readout.map((p) => (
           <ReadCell key={p.amountIn}>
-            <ReadValue>{pct(p.curveImpact)}</ReadValue>
+            <ReadValue $refused={p.allowed === false}>{p.allowed === false ? "Refused" : pct(p.curveImpact)}</ReadValue>
             <Muted>buying {money(p.amountIn * rate, "USD", { compact: true })}</Muted>
           </ReadCell>
         ))}
@@ -92,6 +100,14 @@ function Chart({ points, width }: { points: DepthPoint[]; width: number }) {
   const base = PAD.top + innerH;
   const area = `${line} L${xy[xy.length - 1].x.toFixed(1)},${base} L${xy[0].x.toFixed(1)},${base} Z`;
   const last = xy[xy.length - 1];
+  // The part past a tracker's band, redrawn dashed: sizes the contract refuses.
+  const cut = points.findIndex((p) => p.allowed === false);
+  const refused =
+    cut > 0
+      ? `M${xy.slice(cut - 1).map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L")}`
+      : cut === 0
+        ? line
+        : null;
 
   return (
     <Svg width={width} height={H}>
@@ -104,7 +120,10 @@ function Chart({ points, width }: { points: DepthPoint[]; width: number }) {
       <Line x1={PAD.left} x2={width - PAD.right} y1={base} y2={base} stroke={theme.colors.line} />
       <Path d={area} fill="url(#depth-fill)" />
       <Path d={line} stroke={theme.colors.text} strokeWidth={2} fill="none" strokeLinejoin="round" />
-      <Circle cx={last.x} cy={last.y} r={3.5} fill={theme.colors.text} />
+      {refused ? (
+        <Path d={refused} stroke={theme.colors.neg} strokeWidth={2.5} strokeDasharray="5 4" fill="none" strokeLinejoin="round" />
+      ) : null}
+      <Circle cx={last.x} cy={last.y} r={3.5} fill={refused ? theme.colors.neg : theme.colors.text} />
     </Svg>
   );
 }
@@ -169,9 +188,16 @@ const ReadCell = styled.View`
   background-color: ${(p) => p.theme.colors.surface};
 `;
 
-const ReadValue = styled.Text`
+const ReadValue = styled.Text<{ $refused?: boolean }>`
   font-size: 16px;
   font-weight: 700;
   font-variant: tabular-nums;
-  color: ${(p) => p.theme.colors.text};
+  color: ${(p) => (p.$refused ? p.theme.colors.neg : p.theme.colors.text)};
+`;
+
+const Warn = styled.Text`
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 17px;
+  color: ${(p) => p.theme.colors.neg};
 `;

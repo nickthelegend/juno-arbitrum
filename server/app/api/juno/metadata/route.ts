@@ -3,6 +3,7 @@ import { CallerError, junoHandler, junoJson, junoOptions, readJson } from "@/lib
 import { isPresetId } from "@/lib/juno/curves";
 import { buildMetadata } from "@/lib/juno/metadata";
 import { pinJson } from "@/lib/juno/pinata";
+import { requireSession } from "@/lib/juno/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,11 @@ export async function POST(request: Request) {
   return junoHandler(async () => {
     if (!process.env.PINATA_JWT) throw new CallerError("Metadata pinning is not configured", 503);
     const body = await readJson<Record<string, unknown>>(request);
+    // Pinning spends Juno's Pinata quota: signed-in wallets only, and a named
+    // creator must be the caller.
+    const session = requireSession(request);
+    const creatorInput = maybeAddress(body.creator);
+    if (creatorInput && creatorInput !== session.wallet) throw new CallerError("creator must be your own wallet", 403);
     const str = (key: string) => (typeof body[key] === "string" ? (body[key] as string).trim() : "");
     const num = (key: string) => (typeof body[key] === "number" && Number.isFinite(body[key]) ? (body[key] as number) : null);
 

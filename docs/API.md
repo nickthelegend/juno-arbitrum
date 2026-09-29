@@ -88,6 +88,27 @@ Reverts the app must decode and explain:
 ```
 - Tracker launches go through `launchTracker` and are made by `scripts/`, not the app.
 
+## Wallet sessions (social writes)
+
+Every write stored against a wallet needs proof the caller controls it:
+`POST likes`, `comments`, `follow`, `watchlist`, `plans` (and `PATCH`/`DELETE`
+by the plan's owner), `posts`, `upload` and `metadata`.
+
+1. The wallet signs, with EIP-191 `personal_sign`, exactly
+   `Juno session\nWallet: ${lowercaseAddress}\nIssued: ${isoTime}`.
+2. `POST /api/juno/session { chainId, wallet, issuedAt, signature }` →
+   `201 { token, wallet, expiresAt }` (accepted within 10 minutes of `issuedAt`;
+   valid 7 days; ERC-1271/6492 smart wallets verified on-chain).
+3. Writes send `Authorization: Bearer <token>`. No or expired token → `401
+   {reason:"NoSession"}`; a token for another wallet than the write names →
+   `403 {reason:"WrongWallet"}`. `GET /api/juno/session` echoes the session.
+
+Name claims (`POST profiles`) keep their own per-claim signature; a signature
+from another wallet is `401 {reason:"BadSignature"}`.
+
+`tx/swap` also takes `quoteOnly: true` (no `trader`): the quote with no steps
+and no balance checks, for visitors; the band and staleness checks still run.
+
 ## Other changes
 
 - **Faucet:** `POST /api/juno/faucet { wallet, chainId }` sends 0.02 ETH plus 1,000 Juno test USDC on Sepolia only. It returns `{ eth: txHash, usdc: txHash | null }`, 429 with `retryAfterSeconds` when rate-limited, and 503 when the faucet is empty.

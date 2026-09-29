@@ -1,6 +1,7 @@
 import { normAddress } from "@/lib/juno/address";
 import { junoHandler, junoJson, junoOptions, readJson } from "@/lib/juno/api";
 import { chainIdFromUrl, resolveChainId } from "@/lib/juno/chains";
+import { requireSession } from "@/lib/juno/session";
 import { follow, followStats, following, unfollow } from "@/lib/juno/social-graph";
 
 export const runtime = "nodejs";
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
     const body = await readJson<Record<string, unknown>>(request);
     const chainId = resolveChainId(body.chainId);
     const follower = normAddress(body.follower, "follower");
+    requireSession(request, follower);
     const target = normAddress(body.target, "target");
     const on = body.follow !== false;
     if (on) await follow(chainId, follower, target);

@@ -26,7 +26,7 @@ import { Handle } from "../../components/Handle";
 import { Tappable } from "../../components/Press";
 import { QuickTrade } from "../../components/QuickTrade";
 import { juno, type Coin, type StockReference, type Trader } from "../../lib/api";
-import { explorer } from "../../lib/chain";
+import { explorer, FEED_NOTE, FEED_SOURCE } from "../../lib/chain";
 import { useLinkedState } from "../../lib/linked";
 import { count, invalidateMarkets, loadMarkets, progressLabel } from "../../lib/markets";
 import { age, money, useApi } from "../../lib/useApi";
@@ -141,7 +141,7 @@ export default function TradeScreen() {
             )}
             <Caption style={{ paddingHorizontal: 4 }}>
               Prices are Chainlink&apos;s, read on-chain. A tracker is a Juno curve held to the
-              stock&apos;s price, not a share.
+              stock&apos;s price, not a share.{FEED_NOTE ? ` ${FEED_NOTE}` : ""}
             </Caption>
           </ScrollView>
         )
@@ -349,7 +349,7 @@ function StockCard({
             numberOfLines={1}
             onPress={() => void Linking.openURL(explorer("address", reference.feed))}
           >
-            {listed?.venue ?? "Listed"} · {reference.symbol} · Chainlink feed ↗
+            {listed?.venue ?? "Listed"} · {reference.symbol} · {FEED_SOURCE} feed ↗
           </Text>
         </View>
         <View style={[styles.preBadge, open ? styles.badgeInk : styles.badgeClosed]}>
@@ -361,7 +361,7 @@ function StockCard({
 
       <View style={styles.stats}>
         <Stat
-          label="Chainlink price"
+          label={`${FEED_SOURCE} price`}
           value={reference.price === null ? "—" : money(reference.price, "USD", { compact: false })}
         />
         <View style={styles.statRule} />

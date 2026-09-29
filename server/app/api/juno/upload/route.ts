@@ -1,7 +1,8 @@
 import sharp from "sharp";
 
-import { junoJson, junoOptions } from "@/lib/juno/api";
+import { CallerError, junoJson, junoOptions } from "@/lib/juno/api";
 import { pinFile } from "@/lib/juno/pinata";
+import { requireSession } from "@/lib/juno/session";
 import { videoPoster } from "@/lib/juno/poster";
 
 export const runtime = "nodejs";
@@ -18,6 +19,13 @@ const ALLOWED = /^(image|video)\//;
  */
 export async function POST(request: Request) {
   if (!process.env.PINATA_JWT) return junoJson({ error: "Uploads are not configured" }, { status: 503 });
+  // Pinning spends Juno's Pinata quota: signed-in wallets only.
+  try {
+    requireSession(request);
+  } catch (error) {
+    if (error instanceof CallerError) return junoJson({ error: error.message, ...error.extra }, { status: error.status });
+    throw error;
+  }
 
   // Only what this route reads: two FormData types are visible at build time.
   let form: { get(name: string): unknown };

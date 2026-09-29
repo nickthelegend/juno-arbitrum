@@ -44,12 +44,15 @@ export const NETWORK_NAME = CHAIN_ADDRESSES.name;
 export const NETWORK_LABEL = IS_TESTNET ? `${NETWORK_NAME} · test ETH` : NETWORK_NAME;
 
 /**
- * ETH left untouched for gas on a buy that spends ETH.
- *
- * An Arbitrum transaction costs a fraction of this; the margin covers an
- * approve and a buy back to back, and a gas price spike between quote and send.
+ * Where the stock prices come from, said plainly. Chainlink publishes no
+ * equity feeds on Arbitrum Sepolia, so there each tracker reads a feed that
+ * Juno's keeper keeps equal to Chainlink's Arbitrum One price (answer and
+ * timestamp). On Arbitrum One it is Chainlink's own feed.
  */
-export const GAS_RESERVE_ETH = 0.0005;
+export const FEED_SOURCE = IS_TESTNET ? "Chainlink, mirrored" : "Chainlink";
+export const FEED_NOTE: string | null = IS_TESTNET
+  ? "Chainlink has no stock feeds on Arbitrum Sepolia, so these prices are Chainlink's Arbitrum One prices, copied here by Juno's feed keeper."
+  : null;
 
 const RPC_URL = process.env.EXPO_PUBLIC_RPC_URL || CHAIN.rpcUrls.default.http[0];
 

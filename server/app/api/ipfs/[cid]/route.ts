@@ -1,7 +1,9 @@
+import { junoJson, junoOptions } from "@/lib/juno/api";
 import { gateways, isCid } from "@/lib/juno/media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const OPTIONS = junoOptions;
 
 /**
  * The app's own IPFS gateway: fails over across public gateways server-side
@@ -10,7 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request, { params }: { params: Promise<{ cid: string }> }) {
   const { cid } = await params;
-  if (!isCid(cid)) return Response.json({ error: "Not a content hash" }, { status: 400 });
+  if (!isCid(cid)) return junoJson({ error: "Not a content hash" }, { status: 400 });
 
   const range = request.headers.get("range");
   for (const gateway of gateways()) {
@@ -36,5 +38,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ cid:
       // next gateway
     }
   }
-  return Response.json({ error: "No gateway could serve this content" }, { status: 502 });
+  return junoJson({ error: "No gateway could serve this content" }, { status: 502 });
 }

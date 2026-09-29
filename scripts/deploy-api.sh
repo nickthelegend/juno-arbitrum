@@ -19,9 +19,21 @@ python3 - <<'PY'
 import json
 p = ".vercel/project.json"
 d = json.load(open(p))
-d.setdefault("settings", {}).update({"rootDirectory": "server", "framework": "nextjs"})
+# installCommand: `vercel build` would otherwise reinstall from the lockfile
+# and prune the linux binaries installed below.
+d.setdefault("settings", {}).update({"rootDirectory": "server", "framework": "nextjs", "installCommand": "echo using the local node_modules"})
 json.dump(d, open(p, "w"))
 PY
+# Vercel runs the functions on linux-arm64 and this build runs on macOS, so
+# the native binaries the upload route needs (sharp, ffmpeg, ffprobe) are
+# installed for linux-arm64 first. --no-save keeps package.json and the
+# lockfile as they are; the chmod is the packages' own postinstall, which
+# npm's script policy skips.
+(cd server && npm install --no-save --force --no-audit --no-fund \
+  @img/sharp-linux-arm64@0.35.5 @img/sharp-libvips-linux-arm64@1.3.4 \
+  @ffmpeg-installer/linux-arm64@4.1.4 @ffprobe-installer/linux-arm64@5.2.0 >/dev/null 2>&1 &&
+  chmod u+x node_modules/@ffmpeg-installer/linux-arm64/ffmpeg node_modules/@ffprobe-installer/linux-arm64/ffprobe)
+[ -d server/node_modules/@img/sharp-linux-arm64 ] || { echo "linux-arm64 binaries missing"; exit 1; }
 vercel build --prod
 python3 - <<'PY'
 import glob, json, sys
@@ -30,5 +42,5 @@ bad = [f for f in glob.glob(".vercel/output/functions/**/.vc-config.json", recur
 if bad:
     sys.exit(f"refusing to deploy: env files in {len(bad)} functions")
 PY
-vercel deploy --prebuilt --prod --scope "$SCOPE"
+vercel deploy --prebuilt --prod --archive=tgz --scope "$SCOPE"
 curl -s https://juno-arb-api.vercel.app/api/health | head -c 400; echo

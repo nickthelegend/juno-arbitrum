@@ -3,6 +3,7 @@ import { CallerError, junoHandler, junoJson, junoOptions, readJson, requireNumbe
 import { hydrateCurves } from "@/lib/juno/chain";
 import { chainIdFromUrl, deployment, resolveChainId } from "@/lib/juno/chains";
 import { getCurve, getCurves } from "@/lib/juno/registry";
+import { requireSession } from "@/lib/juno/session";
 import { crossed, unwatch, watch, watchlist } from "@/lib/juno/social-graph";
 import type { Coin } from "@/lib/juno/types";
 
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
     const body = await readJson<Record<string, unknown>>(request);
     const chainId = resolveChainId(body.chainId);
     const wallet = normAddress(body.wallet, "wallet");
+    requireSession(request, wallet);
     const token = normAddress(body.baseMint ?? body.token, "baseMint");
 
     if (body.watch === false) {

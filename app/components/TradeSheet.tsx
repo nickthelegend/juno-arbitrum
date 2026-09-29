@@ -6,7 +6,7 @@ import styled from "styled-components/native";
 import { Tappable } from "./Press";
 import { Button, Caption, Col, ExternalGlyph, Label, Row } from "./kit";
 import { juno, type Coin, type SwapBuild } from "../lib/api";
-import { describeTxError, explorer, GAS_RESERVE_ETH, NETWORK_NAME } from "../lib/chain";
+import { describeTxError, explorer, NETWORK_NAME } from "../lib/chain";
 import { money, tokens } from "../lib/useApi";
 import { useWallet, type SendProgress } from "../lib/wallet";
 import { theme } from "../theme";
@@ -214,11 +214,14 @@ export function TradeSheet({
           }
         : { text: `You have ${tokens(balance)} ETH. Get test ETH from your profile.`, short: "Not enough ETH" };
     }
+    // Whether the rest covers gas is the server's call: it builds the trade
+    // against the real gas estimate and says "Not enough ETH … plus gas" when
+    // it does not. Only an empty wallet is certain to fail.
     const eth = paysEth ? balance : feeBalance;
     const spending = paysEth ? (spend ?? 0) : 0;
-    if (eth !== null && eth !== undefined && eth - spending < GAS_RESERVE_ETH) {
+    if (eth !== null && eth !== undefined && eth - spending <= 0) {
       return spending > 0
-        ? { text: `Leave about ${GAS_RESERVE_ETH} ETH for gas.`, short: "Leave ETH for gas" }
+        ? { text: "That is all your ETH, with nothing left for gas. Try a little less.", short: "Leave ETH for gas" }
         : { text: "You need a little ETH for gas. Get test ETH from your profile.", short: "Need ETH for gas" };
     }
     return null;

@@ -26,6 +26,18 @@ export function maybeAddress(value: unknown): Address | null {
   return isAddr(value) ? (value.trim().toLowerCase() as Address) : null;
 }
 
+/**
+ * A comma-separated list of addresses (a batch lookup), lowercased and
+ * de-duplicated. Any entry that is not an address is a 400 naming the field,
+ * rather than being dropped: a caller with a bad id should hear about it.
+ */
+export function addressList(value: string | null, field: string, max: number): Address[] {
+  const entries = (value ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
+  const bad = entries.find((entry) => !isAddr(entry));
+  if (bad !== undefined) throw new CallerError(`${field} contains something that is not an address`);
+  return [...new Set(entries.map((entry) => entry.toLowerCase() as Address))].slice(0, max);
+}
+
 /** The zero address means "none" in contract structs (native ETH, no feed). */
 export function nonZero(value: string | null | undefined): Address | null {
   if (!value) return null;

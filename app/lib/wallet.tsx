@@ -5,6 +5,7 @@ import { junoFactoryAbi } from "@config/abi";
 import { juno, type TxRecord, type TxStep } from "./api";
 import { CHAIN_ID, chainFor, describeTxError, publicClient, TxError } from "./chain";
 import { PrivyRoot, usePrivyBridge } from "./privy";
+import { forgetSession, setSessionSigner } from "./session";
 import { SignInSheet } from "../components/SignInSheet";
 
 /**
@@ -172,6 +173,8 @@ function Wallet({ children }: { children: React.ReactNode }) {
   }, []);
 
   const disconnect = useCallback(async () => {
+    // Signing out ends the wallet's session too: a shared device keeps no key to it.
+    if (privy.address) await forgetSession(privy.address);
     await privy.logout();
   }, [privy]);
 
@@ -274,6 +277,11 @@ function Wallet({ children }: { children: React.ReactNode }) {
     },
     [privy],
   );
+
+  // Social writes sign a session with the connected wallet (lib/session.ts).
+  useEffect(() => {
+    setSessionSigner(address ? { wallet: address, sign: signMessage } : null);
+  }, [address, signMessage]);
 
   const value = useMemo<WalletState>(
     () => ({ address, ready, signing, send, signMessage, connect, disconnect }),

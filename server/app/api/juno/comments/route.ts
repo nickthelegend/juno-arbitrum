@@ -2,6 +2,7 @@ import { normAddress } from "@/lib/juno/address";
 import { CallerError, junoHandler, junoJson, junoOptions, readJson } from "@/lib/juno/api";
 import { chainIdFromUrl, resolveChainId } from "@/lib/juno/chains";
 import { getCurve } from "@/lib/juno/registry";
+import { requireSession } from "@/lib/juno/session";
 import { addComment, listComments, MAX_COMMENT } from "@/lib/juno/social";
 
 export const runtime = "nodejs";
@@ -18,13 +19,14 @@ export async function GET(request: Request) {
   });
 }
 
-/** `POST { chainId, coin|token, wallet, body, side?, txHash? }`. */
+/** `POST { chainId, coin|token, wallet, body, side?, txHash? }`, with the wallet's session. */
 export async function POST(request: Request) {
   return junoHandler(async () => {
     const body = await readJson<Record<string, unknown>>(request);
     const chainId = resolveChainId(body.chainId);
     const token = normAddress(body.coin ?? body.token, "coin");
     const wallet = normAddress(body.wallet, "wallet");
+    requireSession(request, wallet);
     const text = typeof body.body === "string" ? body.body.trim() : "";
     if (!text) throw new CallerError("Comment is empty");
     if (text.length > MAX_COMMENT) throw new CallerError(`Comment is over ${MAX_COMMENT} characters`);

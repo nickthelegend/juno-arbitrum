@@ -61,9 +61,6 @@ export type TxBuild<Q = Record<string, unknown>> = {
   steps: TxStep[];
   quote: Q;
 };
-
-/** What a person keeps back for gas: 0.0005 ETH. */
-export const GAS_RESERVE_WEI = parseEther("0.0005");
 export const DEFAULT_SLIPPAGE_BPS = 100;
 export const DEADLINE_SECONDS = 10 * 60;
 
@@ -295,11 +292,15 @@ async function estimate(
   return { ...item, gas: limit.toString() };
 }
 
+/**
+ * The early check on the ETH a trade itself moves (not gas), before anything
+ * is simulated. Gas is checked once the steps are estimated (`requireFunds`).
+ */
 async function requireEth(chainId: ChainId, owner: string, needed: bigint, what: string): Promise<void> {
   const balance = await ethBalance(chainId, owner);
   if (balance < needed) {
     throw new CallerError(
-      `Not enough ETH: you have ${fmt(balance, 18)} ETH and ${what} needs ${fmt(needed, 18)} ETH, including about 0.0005 ETH for gas.`,
+      `Not enough ETH: you have ${fmt(balance, 18)} ETH and ${what} needs ${fmt(needed, 18)} ETH, plus gas.`,
       400,
       { reason: "InsufficientFunds", balance: fmt(balance, 18), needed: fmt(needed, 18) },
     );
@@ -308,17 +309,20 @@ async function requireEth(chainId: ChainId, owner: string, needed: bigint, what:
 
 /**
  * The last check before a build is returned: the wallet can pay every step's
- * value plus its gas at today's max fee. A launch is ~6M gas (it deploys a
- * token and creates the Uniswap pool), which a flat reserve understates.
+ * value plus its padded gas limit at today's max fee — what the wallet will
+ * actually have to cover. No flat reserve: on Arbitrum a buy is ~0.00001 ETH
+ * of gas and a launch (~6M gas) far more, so any constant is wrong for one.
  */
 export async function requireFunds(chainId: ChainId, owner: string, steps: TxStep[], what: string): Promise<void> {
-  const fees = await publicClient(chainId)
+  const client = publicClient(chainId);
+  const estimated = await client
     .estimateFeesPerGas()
+    .then((fees) => fees.maxFeePerGas ?? null)
     .catch(() => null);
-  const maxFee = fees?.maxFeePerGas ?? 0n;
+  const maxFee: bigint = estimated ?? (await client.getGasPrice()) * 2n;
   const gasCost = steps.reduce((sum, item) => sum + BigInt(item.gas) * maxFee, 0n);
   const value = steps.reduce((sum, item) => sum + BigInt(item.value), 0n);
-  const needed = value + (gasCost > GAS_RESERVE_WEI ? gasCost : GAS_RESERVE_WEI);
+  const needed = value + gasCost;
   const balance = await ethBalance(chainId, owner);
   if (balance < needed) {
     throw new CallerError(
@@ -411,7 +415,7 @@ export async function buildLaunch(request: LaunchRequest): Promise<TxBuild<Launc
     );
   }
   const initialBuy = request.initialBuy ?? 0n;
-  await requireEth(request.chainId, request.creator, initialBuy + GAS_RESERVE_WEI, "this launch");
+  if (initialBuy > 0n) await requireEth(request.chainId, request.creator, initialBuy, "this launch");
 
   const params = {
     name: request.name,
@@ -561,7 +565,7 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
     if (quoteOnly) {
       // nothing to check: no transaction is built
     } else if (isEth) {
-      await requireEth(chainId, trader, spend + GAS_RESERVE_WEI, "this buy");
+      await requireEth(chainId, trader, spend, "this buy");
     } else {
       const [usdcBalance] = await tokenBalances(chainId, [{ token: row.quote!, owner: trader }]);
       if (usdcBalance === null) throw new Error("USDC balance read failed");
@@ -572,7 +576,6 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
           { reason: "InsufficientFunds", balance: fmt(usdcBalance, decimals), needed: fmt(spend, decimals) },
         );
       }
-      await requireEth(chainId, trader, GAS_RESERVE_WEI, "gas");
     }
 
     let approving = false;
@@ -656,7 +659,6 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
       });
     }
     if (tokensIn > state.sold) throw new CallerError("That is more than the curve has sold.", 400);
-    if (!quoteOnly) await requireEth(chainId, trader, GAS_RESERVE_WEI, "gas");
 
     const q = await quoteSell(chainId, curve, tokensIn);
     if (q.quoteOut === 0n) throw new CallerError(revertMessage("ZeroAmount"), 400);
@@ -713,7 +715,6 @@ export async function buildClaim(input: { chainId: ChainId; row: CurveRow; owner
     throw new CallerError(revertMessage("NotCreator"), 403, { reason: "NotCreator" });
   }
   if (state.creatorFees === 0n) throw new CallerError("Nothing to claim yet.", 400, { reason: "ZeroAmount" });
-  await requireEth(input.chainId, input.owner, GAS_RESERVE_WEI, "gas");
   await simulate(input.chainId, {
     account: input.owner,
     address: input.row.curve,
@@ -722,15 +723,17 @@ export async function buildClaim(input: { chainId: ChainId; row: CurveRow; owner
     args: [],
   });
   const amount = fmt(state.creatorFees, input.row.quoteDecimals);
+  const steps = [
+    await estimate(
+      input.chainId,
+      input.owner,
+      step("Claim fees", input.row.curve, encodeFunctionData({ abi: junoCurveAbi, functionName: "claimCreatorFees" })),
+    ),
+  ];
+  await requireFunds(input.chainId, input.owner, steps, "this claim");
   return {
     chainId: input.chainId,
-    steps: [
-      await estimate(
-        input.chainId,
-        input.owner,
-        step("Claim fees", input.row.curve, encodeFunctionData({ abi: junoCurveAbi, functionName: "claimCreatorFees" })),
-      ),
-    ],
+    steps,
     quote: { amount, quoteSymbol: input.row.quoteSymbol },
     amount,
     quoteSymbol: input.row.quoteSymbol,
@@ -748,7 +751,6 @@ export async function buildGraduate(input: { chainId: ChainId; row: CurveRow; fr
     const pct = Number((state.sold * 10_000n) / (state.curveSupply || 1n)) / 100;
     throw new CallerError(`${revertMessage("NotFull")} It is ${pct}% sold.`, 400, { reason: "NotFull" });
   }
-  await requireEth(input.chainId, input.from, GAS_RESERVE_WEI, "gas");
   await simulate(input.chainId, {
     account: input.from,
     address: input.row.curve,
@@ -756,16 +758,18 @@ export async function buildGraduate(input: { chainId: ChainId; row: CurveRow; fr
     functionName: "graduate",
     args: [],
   });
+  const steps = [
+    await estimate(
+      input.chainId,
+      input.from,
+      step("Graduate to Uniswap", input.row.curve, encodeFunctionData({ abi: junoCurveAbi, functionName: "graduate" })),
+      { kind: "graduate" },
+    ),
+  ];
+  await requireFunds(input.chainId, input.from, steps, "graduating");
   return {
     chainId: input.chainId,
-    steps: [
-      await estimate(
-        input.chainId,
-        input.from,
-        step("Graduate to Uniswap", input.row.curve, encodeFunctionData({ abi: junoCurveAbi, functionName: "graduate" })),
-        { kind: "graduate" },
-      ),
-    ],
+    steps,
     quote: {
       pool: state.pool.toLowerCase(),
       quoteLiquidity: fmt(state.quoteReserve, input.row.quoteDecimals),

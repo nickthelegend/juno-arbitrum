@@ -26,6 +26,11 @@ export type DepthPoint = {
   /** The part the curve caused, fee excluded. */
   curveImpact: number;
   fee: number;
+  /**
+   * The contract would accept this trade now: for a tracker buy, the curve's
+   * own `bandOk && marketOpen` verdict; always true for posts and sells.
+   */
+  allowed: boolean;
 };
 
 export type SizeSuggestion = DepthPoint & { ceilingReached: boolean };
@@ -73,6 +78,7 @@ async function quoteSizes(
         priceImpact: spot > 0 ? average / spot - 1 : 0,
         curveImpact: spot > 0 ? (quoteIn - fee) / out / spot - 1 : 0,
         fee,
+        allowed: q.bandOk && q.marketOpen,
       };
     }
     const q = result.result as unknown as SellQuoteRaw;
@@ -88,6 +94,7 @@ async function quoteSizes(
       priceImpact: spot > 0 ? 1 - average / spot : 0,
       curveImpact: spot > 0 ? 1 - (out + fee) / tokensIn / spot : 0,
       fee,
+      allowed: true,
     };
   });
 }

@@ -43,9 +43,11 @@ describe("verifyNameClaim", () => {
     expect(result).toEqual({ wallet: account.address.toLowerCase(), name: "Alice_1", nameKey: "alice_1" });
   });
 
-  it("rejects a signature from another key", async () => {
+  it("rejects a signature from another key, as an authentication failure", async () => {
     const claim = await signed("alice", other);
     expect(await rejection(verifyNameClaim(claim, { now: NOW }))).toMatch(/does not match/);
+    const error = await verifyNameClaim(claim, { now: NOW }).catch((caught: unknown) => caught as { status: number; extra: { reason?: string } });
+    expect(error).toMatchObject({ status: 401, extra: { reason: "BadSignature" } });
   });
 
   it("rejects a claim for a different name than was signed", async () => {

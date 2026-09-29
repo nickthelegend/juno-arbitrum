@@ -44,6 +44,7 @@ import { aggregatorAbi } from "../lib/juno/chainlink";
 import { deployment, publicClient, rpcUrls, SEPOLIA, viemChain } from "../lib/juno/chains";
 import { nameMessage } from "../lib/juno/names";
 import { pinJson } from "../lib/juno/pinata";
+import { sessionMessage } from "../lib/juno/session";
 import { trackerLaunchParams } from "../lib/juno/trackers";
 import { launchP0 } from "../lib/juno/tx";
 
@@ -147,10 +148,15 @@ const COMMENTS: Array<{ who: Name; coin: string; body: string }> = [
 const HOME = path.resolve(process.cwd(), "..", ".juno", "demo-arb");
 mkdirSync(HOME, { recursive: true });
 
+/** Every demo account by lowercase address, so a write can sign its wallet's session. */
+const signers = new Map<string, PrivateKeyAccount>();
+
 function keyFor(name: string): PrivateKeyAccount {
   const file = path.join(HOME, `${name}.key`);
   if (!existsSync(file)) writeFileSync(file, generatePrivateKey(), { mode: 0o600 });
-  return privateKeyToAccount(readFileSync(file, "utf8").trim() as Hex);
+  const account = privateKeyToAccount(readFileSync(file, "utf8").trim() as Hex);
+  signers.set(account.address.toLowerCase(), account);
+  return account;
 }
 
 type Progress = {
@@ -172,10 +178,39 @@ const save = () => writeFileSync(PROGRESS, JSON.stringify(progress, null, 2));
 /* Plumbing                                                            */
 /* ------------------------------------------------------------------ */
 
+/** Social writes and pins carry the writing wallet's session, as the app's do. */
+const SESSION_ROUTES = ["/api/juno/comments", "/api/juno/likes", "/api/juno/follow", "/api/juno/posts", "/api/juno/metadata", "/api/juno/watchlist", "/api/juno/plans"];
+const sessions = new Map<string, string>();
+
+async function sessionFor(account: PrivateKeyAccount): Promise<string> {
+  const wallet = account.address.toLowerCase();
+  const cached = sessions.get(wallet);
+  if (cached) return cached;
+  const issuedAt = new Date().toISOString();
+  const signature = await account.signMessage({ message: sessionMessage(wallet, issuedAt) });
+  const response = await fetch(`${API}/api/juno/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chainId: CHAIN, wallet, issuedAt, signature }),
+  });
+  const json = (await response.json().catch(() => ({}))) as { token?: string; error?: string };
+  if (!response.ok || !json.token) throw new Error(`session for ${wallet}: ${json.error ?? response.status}`);
+  sessions.set(wallet, json.token);
+  return json.token;
+}
+
 async function api<T = any>(route: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (body !== undefined && SESSION_ROUTES.includes(route)) {
+    const fields = body as Record<string, unknown>;
+    const writer = String(fields.wallet ?? fields.follower ?? fields.authorWallet ?? fields.creator ?? "").toLowerCase();
+    const account = signers.get(writer);
+    if (!account) throw new Error(`${route}: no demo key for ${writer || "(no wallet)"}`);
+    headers.authorization = `Bearer ${await sessionFor(account)}`;
+  }
   const response = await fetch(`${API}${route}`, {
     method: body === undefined ? "GET" : "POST",
-    headers: { "content-type": "application/json" },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json = (await response.json().catch(() => ({}))) as T & { error?: string };

@@ -1,18 +1,24 @@
 import "server-only";
 
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
-import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+/*
+ * The installers resolve their platform binary when imported, so they are
+ * imported on first use: an image upload never depends on the video tools
+ * being present, and a missing binary fails only the video that needs it.
+ */
+const ffmpegPath = async () => (await import("@ffmpeg-installer/ffmpeg")).default.path;
+const ffprobePath = async () => (await import("@ffprobe-installer/ffprobe")).default.path;
+
 const run = promisify(execFile);
 
 /** Width, height and duration of a video file. */
 async function probeVideo(path: string): Promise<{ width: number; height: number; durationSec: number }> {
-  const { stdout } = await run(ffprobeInstaller.path, [
+  const { stdout } = await run(await ffprobePath(), [
     "-v",
     "error",
     "-select_streams",
@@ -52,7 +58,7 @@ export async function videoPoster(bytes: Buffer): Promise<{ jpeg: Buffer; width:
     await writeFile(input, bytes);
     const meta = await probeVideo(input);
     const at = meta.durationSec > 1 ? "0.5" : "0";
-    await run(ffmpegInstaller.path, ["-y", "-ss", at, "-i", input, "-frames:v", "1", "-q:v", "3", output]);
+    await run(await ffmpegPath(), ["-y", "-ss", at, "-i", input, "-frames:v", "1", "-q:v", "3", output]);
     return { jpeg: await readFile(output), width: meta.width, height: meta.height };
   } finally {
     await rm(dir, { recursive: true, force: true });

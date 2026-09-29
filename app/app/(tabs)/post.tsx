@@ -157,6 +157,18 @@ export default function PostScreen() {
   /** Clear the composer and open the new coin, after a beat on the finished log. */
   async function finish(token: string) {
     setUnlisted(null);
+    // The caption is also the creator's first post on the coin: the feed shows
+    // it, and it is the thread people reply under. The coin is live either
+    // way, so a post that fails is said and does not undo the launch.
+    const text = caption.trim();
+    if (text && wallet.address) {
+      try {
+        const { post } = await juno.createPost({ authorWallet: wallet.address, body: text, baseMint: token });
+        note({ label: "Caption posted", receipt: post.id });
+      } catch (caught) {
+        setError(`Your coin is live, but the caption was not posted: ${caught instanceof Error ? caught.message : "try again from the coin page"}`);
+      }
+    }
     setStatus("Live");
     feedChanged();
     // A beat on the finished log: every receipt is on screen at once, which

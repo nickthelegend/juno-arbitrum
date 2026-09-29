@@ -92,6 +92,27 @@ export async function faucetStatus(chainId: ChainId) {
   };
 }
 
+/**
+ * May this wallet (from this network) drip now? Read before asking, so the
+ * app can say "used today, try again in 3h" instead of sending a request it
+ * knows will be refused.
+ */
+export async function faucetEligibility(
+  chainId: ChainId,
+  wallet: string,
+  ip: string,
+): Promise<{ eligible: true } | { eligible: false; scope: "wallet" | "ip"; retryAfterSeconds: number; message: string }> {
+  if (!isTestnet(chainId)) throw new CallerError("The faucet only runs on test networks.", 404);
+  const claims = await claimsCollection();
+  const recent = await claims
+    .find({ chainId, at: { $gte: new Date(Date.now() - WINDOW_MS) }, $or: [{ wallet }, { ip }] })
+    .toArray();
+  const decision = rateDecision(recent, wallet, ip);
+  return decision.ok
+    ? { eligible: true }
+    : { eligible: false, scope: decision.scope, retryAfterSeconds: decision.retryAfterSeconds, message: retryMessage(decision) };
+}
+
 export async function drip(chainId: ChainId, wallet: string, ip: string) {
   if (!isTestnet(chainId)) throw new CallerError("The faucet only runs on test networks.", 404);
   const faucet = faucetAccount();

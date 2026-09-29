@@ -651,9 +651,11 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
     const quoteOnly = request.quoteOnly === true;
     const [held] = quoteOnly ? [tokensIn] : await tokenBalances(chainId, [{ token: row.token, owner: trader }]);
     if (held === null) throw new Error("Token balance read failed");
-    // "Sell 100%" arrives as a float of the holding, which can land a hair
-    // above the exact balance. Within a billionth, it means everything.
-    if (held < tokensIn && held > 0n && tokensIn - held <= tokensIn / 1_000_000_000n) tokensIn = held;
+    // "Sell 100%" arrives as a float of the holding, which lands a hair above
+    // or below the exact balance: within a billionth either way it means
+    // everything, so no dust is left behind (or refused as too much).
+    const gap = held > tokensIn ? held - tokensIn : tokensIn - held;
+    if (held > 0n && gap > 0n && gap <= held / 1_000_000_000n) tokensIn = held;
     if (held < tokensIn) {
       throw new CallerError(`Not enough ${row.symbol}: you hold ${fmt(held, 18)}.`, 400, {
         reason: "InsufficientFunds",

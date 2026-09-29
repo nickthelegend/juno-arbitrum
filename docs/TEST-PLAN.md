@@ -212,3 +212,51 @@ React Native Web's pressables (range pills, Buy); the same buttons respond to
 real mouse input in Google Chrome (Playwright, `channel: "chrome"`, raw mouse
 down/up), which is how G3/G4/G6 were confirmed. Page content, console and
 network for every item were read through Claude in Chrome.
+
+## L. Signed-in flows on a local Arbitrum node (30 Sep 2026)
+
+Everything a signed-in user does, run through the web app on a local Nitro
+dev node (chain 412346, `scripts/localnet/up.sh`: the same contracts
+including the Stylus `CurveMath`, WETH and a real Uniswap v3 factory and
+position manager, three feeds, Multicall3). The node stands in for Arbitrum
+Sepolia while the deployer has no test ETH. Stack: local API (`next dev` with
+`server/.env.localnet`, local Postgres and Mongo, real Pinata), local web
+build with `EXPO_PUBLIC_WALLET=injected`. That is a browser (EIP-1193) wallet
+in place of Privy, and it signs every transaction and message for real.
+`node scripts/localnet/e2e.mjs` drives Chromium with three fresh wallets
+(alice, bob, carol). Each UI step is then checked against the chain and the
+API, and every stage checks that the console and network are clean.
+
+Result of the fresh, full run: **40/40 PASS.**
+
+| ID | Flow | Checked against |
+|---|---|---|
+| L1 | Connect a browser wallet | profile shows the address |
+| L2 | Faucet from the profile; a second request; the card after a drip | 0.02 ETH + 1,000 USDC on-chain; 429 with the wait; "Faucet used today" + the wait, before any request |
+| L3 | Claim a name (signed) | stored, shown |
+| L4 | Launch a photo post | IPFS pins, launch tx, curve, listed, caption posted as the creator's post, in the feed |
+| L5 | Launch a reel | video + distinct poster, `media.kind: "video"`, in Reels |
+| L6 | Buy 0.002 ETH from the sheet, with a comment | tokens held, activity row, comment stored, receipt links the chain's explorer |
+| L7 | Sell 50%, then 100% | half (rounded down) leaves; 100% leaves exactly 0 |
+| L8 | Like and follow from the feed | stored against the wallet's session |
+| L9 | Creator claims fees | offered to the creator only, paid, rewards 0 |
+| L10 | Tracker: Trade tab → jTSLA, spend 50 USDC | "Approve USDC → Buy", USDC −50, tokens held; a 20,000 USDC buy is refused in words before signing, Buy disabled (`aria-disabled`) |
+| L11 | Stock feed stale (keeper stamps it 27 h old) | coin offers "Sell · market closed"; sell 100% settles in USDC; API refusal `MarketClosed` |
+| L12 | Fill a post's curve from the sheet | auto-graduates: Uniswap v3 pool with liquidity; "Trading on Uniswap ↗" opens the pool on the explorer; the curve refuses more trades |
+| L13 | Watch, price alert, weekly plan, "Put in" | watchlist, alert at the typed price, plan stored, the contribution is a real buy counted in the plan |
+| L14 | Caption → thread → reply | reply stored and shown |
+| L15 | Creator profile; holder's portfolio | name, follow state, no sold-out rows; graduated coin valued and on the profile |
+
+Found and fixed while doing it:
+
+| Where | Problem | Fix |
+|---|---|---|
+| reels | a reel's metadata had the video as `image` and no `animation_url` (the app sent the poster as `imageUrl`/`mimeType`), so reels were listed as photos and missing from Reels | the app sends `mediaUrl`/`mimeType`/`posterUrl`; the route also reads the old field names |
+| upload | every reel upload failed on ffprobe 4.4 (no `stream_side_data` section) | read rotation from `side_data_list` or `tags.rotate` |
+| sell sheet | the 50% preset rounded to six figures, and 100% could round above the holding and be refused | partial presets round down; 100% is the whole holding; the server takes a sell within a billionth of the balance (either side) as "everything", so no dust remains (2 unit tests) |
+| trade sheet | a signed-in out-of-band quote was a 400 in the network log | `refusalAsAnswer: true` → `200 {refusal}`, like visitor quotes |
+| kit `Button` | disabled buttons had no `aria-disabled` on the web (Pressable reads `disabled`, not `accessibilityState`) | pass `disabled` |
+| labels | "View on Arbiscan" etc. on chains whose explorer is not Arbiscan; "Sign in with your email" with a browser wallet | `EXPLORER_NAME`; copy follows the wallet |
+| threads | text posts were never written by the app and their thread screen was unreachable | the launch caption is posted as the creator's post; feed cards link "Reply / N replies" to the thread |
+| holdings | sold-out positions listed as "0 jTSLA · $0" | holdings list only what is held (realised P&L stays in the totals) |
+| faucet | the card offered the faucet to a wallet that had used it, and the refusal was a 429 | `GET /api/juno/faucet?wallet=` says whether it may drip and the wait; the card shows it instead of asking |

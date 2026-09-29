@@ -32,6 +32,8 @@ export type Buyers = { wallets: string[]; handles: string[] };
 export function FeedCard({
   coin,
   caption,
+  thread = null,
+  onOpenThread,
   buyers,
   onOpen,
   onBuy,
@@ -44,6 +46,9 @@ export function FeedCard({
   coin: Coin;
   /** What the creator wrote about it, when they posted about it. Falls back to the launch description. */
   caption: string | null;
+  /** The creator's post the caption came from: its replies are a thread. */
+  thread?: { id: string; replies: number } | null;
+  onOpenThread?: () => void;
   buyers: Buyers | null;
   onOpen: () => void;
   onBuy: () => void;
@@ -248,6 +253,13 @@ export function FeedCard({
           </Text>
         ) : null}
       </Pressable>
+      {thread && onOpenThread ? (
+        <Pressable onPress={onOpenThread} accessibilityRole="link" hitSlop={8}>
+          <Text style={styles.thread}>
+            {thread.replies === 0 ? "Reply" : `${thread.replies} ${thread.replies === 1 ? "reply" : "replies"}`}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {/* How far from becoming a permanent pool */}
       <View style={styles.curve}>
@@ -427,6 +439,7 @@ const styles = StyleSheet.create({
   },
   ticker: { fontWeight: "700", color: theme.colors.muted },
   caption: { fontSize: 14, lineHeight: 20, color: theme.colors.text, paddingHorizontal: 14, paddingTop: 3 },
+  thread: { fontSize: 13, fontWeight: "600", color: theme.colors.muted, paddingHorizontal: 14, paddingTop: 4 },
 
   curve: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingTop: 12 },
   track: { flex: 1, height: 4, borderRadius: 2, backgroundColor: theme.colors.line, overflow: "hidden" },

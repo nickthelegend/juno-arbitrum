@@ -804,7 +804,7 @@ export const juno = {
     baseMint?: string | null;
     /** Set to reply. A comment is a post with a parent. */
     parentId?: string | null;
-  }) => authed<{ post: { id: string } }>("POST", "/api/juno/posts", input, input.authorWallet),
+  }) => authed<{ post: { id: string } }>("POST", "/api/juno/posts", { chainId: CHAIN_ID, ...input }, input.authorWallet),
 
   post: (id: string) =>
     api.get<{
@@ -897,6 +897,15 @@ export const juno = {
    * A 429 carries `retryAfterSeconds`, surfaced on the thrown error so the
    * card can say how long to wait.
    */
+  /** Whether `wallet` may use the faucet now, and the wait in words when it may not. */
+  faucetEligibility: (wallet: string) =>
+    api
+      .get<{
+        empty: boolean;
+        eligibility?: { eligible: true } | { eligible: false; retryAfterSeconds: number; message: string };
+      }>(`/api/juno/faucet?chainId=${CHAIN_ID}&wallet=${wallet}`)
+      .then((body) => ({ empty: body.empty, ...(body.eligibility ?? { eligible: true as const }) })),
+
   faucet: async (wallet: string) => {
     try {
       return await api.post<{ eth: string; usdc: string | null }>(

@@ -25,6 +25,15 @@ import { theme } from "../theme";
  */
 export function WalletCard({ address }: { address: string }) {
   const balances = useApi(() => juno.balances(address), [address]);
+  // Asked before the button is offered: a wallet that already dripped today
+  // (or a network that used its share) sees the wait, not a refused request.
+  const [dripped, setDripped] = useState(0);
+  const faucet = useApi(
+    () => (IS_TESTNET ? juno.faucetEligibility(address).catch(() => null) : Promise.resolve(null)),
+    [address, dripped],
+  );
+  const limited = faucet.data && !faucet.data.eligible ? faucet.data : null;
+  const dry = faucet.data?.empty === true;
   const [copied, setCopied] = useState(false);
   const [funding, setFunding] = useState(false);
   const [message, setMessage] = useState<{ tone: "pos" | "neg"; text: string; url?: string } | null>(null);
@@ -50,6 +59,7 @@ export function WalletCard({ address }: { address: string }) {
       // block later, so read it again after one.
       balances.refresh();
       setTimeout(() => balances.refresh(), 2500);
+      setDripped((n) => n + 1);
     } catch (error) {
       setMessage({
         tone: "neg",
@@ -113,11 +123,17 @@ export function WalletCard({ address }: { address: string }) {
 
       {IS_TESTNET ? (
         <Button
-          label={funding ? "Asking the faucet…" : "Get test ETH"}
-          variant={empty ? "lime" : "quiet"}
+          label={funding ? "Asking the faucet…" : limited ? "Faucet used today" : dry ? "Faucet is empty" : "Get test ETH"}
+          variant={empty && !limited && !dry ? "lime" : "quiet"}
           loading={funding}
+          disabled={!!limited || dry}
           onPress={() => void fund()}
         />
+      ) : null}
+      {IS_TESTNET && !message && (limited || dry) ? (
+        <Text style={[styles.message, { color: theme.colors.muted }]}>
+          {limited ? limited.message : "The faucet is empty right now. Try again later."}
+        </Text>
       ) : null}
 
       {message ? (

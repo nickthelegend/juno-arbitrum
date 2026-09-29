@@ -355,6 +355,25 @@ describe("buildSwap: sells", () => {
     const error = await rejection(buildSwap({ chainId: 421614, row: row(), trader: TRADER, side: "sell", amountIn: "500" }));
     expect(error.message).toBe("Not enough POST: you hold 10.");
   });
+
+  it("sells the exact holding when '100%' arrives a hair either side of it", async () => {
+    const held = 856_336_313_126_303_629n; // 0.8563… as the app's float prints it
+    mocks.quoteSell.mockResolvedValue({ quoteOut: parseEther("0.0001"), fee: 1n, priceAfter: 19_000_000n });
+    for (const amountIn of ["0.8563363131263036", "0.85633631312630370"]) {
+      mocks.tokenBalances.mockResolvedValue([held]);
+      const build = await buildSwap({ chainId: 421614, row: row(), trader: TRADER, side: "sell", amountIn });
+      const [tokensIn] = decodeFunctionData({ abi: junoCurveAbi, data: build.steps[0].data }).args as readonly [bigint];
+      expect(tokensIn).toBe(held);
+    }
+  });
+
+  it("keeps a deliberate partial sell as typed", async () => {
+    mocks.tokenBalances.mockResolvedValue([10n * E18]);
+    mocks.quoteSell.mockResolvedValue({ quoteOut: parseEther("0.0001"), fee: 1n, priceAfter: 19_000_000n });
+    const build = await buildSwap({ chainId: 421614, row: row(), trader: TRADER, side: "sell", amountIn: "9.99" });
+    const [tokensIn] = decodeFunctionData({ abi: junoCurveAbi, data: build.steps[0].data }).args as readonly [bigint];
+    expect(tokensIn).toBe(parseEther("9.99"));
+  });
 });
 
 describe("buildLaunch", () => {

@@ -54,7 +54,14 @@ export const text = async (page) => (await page.locator("body").innerText()).rep
 /** Tap the visible element whose text is exactly `label` (the last one when several are on screen). */
 export async function tap(page, label, { last = false, wait = 1200 } = {}) {
   const loc = page.getByText(label, { exact: true }).locator("visible=true");
-  await (last ? loc.last() : loc.first()).click({ timeout: 15000 });
+  try {
+    await (last ? loc.last() : loc.first()).click({ timeout: 15000 });
+  } catch (error) {
+    const shot = join(HERE, "..", "..", ".juno", `e2e-fail-${label.replace(/[^a-z0-9]+/gi, "_")}.png`);
+    await page.screenshot({ path: shot }).catch(() => {});
+    console.log(`(screenshot ${shot})\n${(await text(page)).slice(0, 600)}`);
+    throw error;
+  }
   await page.waitForTimeout(wait);
 }
 export async function waitFor(page, needle, ms = 60000) {
@@ -87,6 +94,9 @@ async function walletStage() {
   check("L2 faucet: 0.02 ETH + 1,000 test USDC land on-chain", funded && Math.abs(e - before - 0.02) < 1e-9 && u === 1000, { eth: e, usdc: u });
   const again = await fetch(`${API}/api/juno/faucet`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chainId: CHAIN_ID, wallet: address }) });
   check("L2 faucet: a second request the same day is 429 with the wait", again.status === 429 && typeof (await again.json()).retryAfterSeconds === "number", again.status);
+  await page.reload({ waitUntil: "networkidle" });
+  const usedToday = await waitFor(page, "Faucet used today", 15000);
+  check("L2 after a drip the card says the faucet is used today, with the wait", usedToday && (await text(page)).includes("This wallet already used the faucet today"), usedToday);
 
   const name = `alice_${address.slice(2, 6)}`;
   await tap(page, "Choose a name", { last: true });
@@ -118,8 +128,9 @@ async function launch(page, { kind, file, name, symbol, caption }) {
   await page.getByPlaceholder(kind === "reel" ? "Street level, 2am." : "Say what this is", { exact: true }).fill(caption);
   await tap(page, kind === "reel" ? "Launch reel" : "Launch post", { last: true, wait: 1000 });
   const listed = await waitFor(page, "Listed on Juno", 180000);
+  const captioned = await waitFor(page, "Caption posted", 20000);
   const log = await text(page);
-  return { listed, log: log.slice(log.indexOf("pinned to IPFS") - 30, log.indexOf("Listed on Juno") + 60) };
+  return { listed: listed && captioned, log: log.slice(log.indexOf("pinned to IPFS") - 30, log.indexOf("Listed on Juno") + 80) };
 }
 
 async function launchedBy(creator) {
@@ -171,6 +182,30 @@ async function signIn(page) {
   }
 }
 const sheetButton = (page, name) => page.getByRole("button", { name, exact: true }).locator("visible=true");
+/**
+ * Fund a test wallet: the faucet through the UI when it will drip; when this
+ * network used its daily share (every local wallet is one IP), the card must
+ * say so, and the local keeper tops the wallet up instead.
+ */
+async function fundWallet(page, address, need = 0.01) {
+  if ((await eth(address)) >= need) return;
+  await page.goto(`${APP}/profile`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(2000);
+  const shown = await text(page);
+  if (shown.includes("Get test ETH")) {
+    await tap(page, "Get test ETH", { last: true, wait: 1000 });
+    for (let i = 0; i < 40 && (await eth(address)) < need; i++) await page.waitForTimeout(1000);
+  } else {
+    check("L2 a refused faucet is explained before asking", shown.includes("Faucet used today") && /Try again in \d/.test(shown), shown.slice(shown.indexOf("Faucet"), shown.indexOf("Faucet") + 120));
+  }
+  if ((await eth(address)) < need) {
+    const { createWalletClient, defineChain, parseEther } = await import("viem");
+    const local = defineChain({ id: CHAIN_ID, name: "Arbitrum Local", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [RPC] } } });
+    const keeper = createWalletClient({ account: privateKeyToAccount(keeperKey()), chain: local, transport: http(RPC) });
+    await chain.waitForTransactionReceipt({ hash: await keeper.sendTransaction({ to: address, value: parseEther(String(Math.max(0.05, need * 2))) }) });
+  }
+}
+
 /** Type an amount on the sheet's keypad. */
 async function keypad(page, value) {
   for (const key of value) {
@@ -186,10 +221,7 @@ async function tradeStage() {
   if (!coin) throw new Error("run the launch stage first");
   const { browser, page, errors, address } = await open("bob");
   await signIn(page);
-  if ((await eth(address)) < 0.01) {
-    await tap(page, "Get test ETH", { last: true, wait: 1000 });
-    for (let i = 0; i < 40 && (await eth(address)) < 0.01; i++) await page.waitForTimeout(1000);
-  }
+  await fundWallet(page, address);
 
   // L6: open the coin, Buy, type 0.002 ETH, add a comment, confirm.
   await page.goto(`${APP}/coin/${coin.token}`, { waitUntil: "networkidle" });
@@ -361,7 +393,169 @@ async function trackerStage() {
   await browser.close();
 }
 
-const stages = { wallet: walletStage, launch: launchStage, trade: tradeStage, trackers: trackerStage };
+// ---------------- stage: graduate (L12 a post fills its curve and moves to Uniswap v3)
+const POOL_ABI = [
+  { type: "function", name: "liquidity", stateMutability: "view", inputs: [], outputs: [{ type: "uint128" }] },
+  { type: "function", name: "token0", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+];
+async function graduateStage() {
+  const { browser, page, errors, address } = await open("carol");
+  await signIn(page);
+  // Filling a curve takes ~0.05 ETH, more than the faucet's 0.02.
+  await fundWallet(page, address, 0.1);
+  const symbol = `G${Date.now().toString(36).slice(-4).toUpperCase()}`;
+  const launched = await launch(page, { kind: "post", file: PHOTO, name: "Last Light", symbol, caption: "Filling this one to the top." });
+  const coin = (await launchedBy(address)).at(-1);
+  check("L12 carol launches a post to fill", launched.listed && !!coin, { symbol, token: coin?.token });
+
+  await page.goto(`${APP}/coin/${coin.token}`, { waitUntil: "networkidle" });
+  await waitFor(page, "Last Light", 20000);
+  await sheetButton(page, "Buy").last().click();
+  await page.waitForTimeout(1200);
+  await keypad(page, "0.06");
+  await waitFor(page, "You'll receive", 20000);
+  await sheetButton(page, "Buy").last().click();
+  const filled = await waitFor(page, "Done", 120000);
+  await tap(page, "Done", { last: true });
+  let detail = await coinDetail(coin.token);
+  for (let i = 0; i < 20 && !detail.coin?.curve?.graduated; i++) { await page.waitForTimeout(2000); detail = await coinDetail(coin.token); }
+  const pool = detail.coin?.graduatedPool;
+  const liquidity = pool ? await chain.readContract({ address: pool, abi: POOL_ABI, functionName: "liquidity" }) : 0n;
+  check("L12 the buy fills the curve and it graduates: a Uniswap v3 pool with liquidity", filled && detail.coin?.curve?.graduated === true && liquidity > 0n, { pool, liquidity: String(liquidity), progress: detail.coin?.curve?.progress });
+
+  await page.reload({ waitUntil: "networkidle" });
+  const onUniswap = await waitFor(page, "Trading on Uniswap ↗", 20000);
+  const [popup] = await Promise.all([page.waitForEvent("popup", { timeout: 10000 }).catch(() => null), sheetButton(page, "Trading on Uniswap ↗").last().click()]);
+  if (popup) await popup.waitForURL((u) => u.href !== "about:blank" && u.href !== "", { timeout: 10000 }).catch(() => {});
+  const url = popup?.url() ?? null;
+  const explorerAnswer = url ? await (await fetch(url)).json().catch(() => null) : null;
+  check("L12 the coin says it trades on Uniswap and links the pool on the chain's explorer", onUniswap && url === `${API}/api/explorer/address/${pool}` && !!explorerAnswer, { url, explorer: explorerAnswer && Object.keys(explorerAnswer) });
+  const refusal = await (await fetch(`${API}/api/juno/tx/swap`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chainId: CHAIN_ID, curve: coin.token, side: "buy", amountIn: "0.001", quoteOnly: true }) })).json();
+  check("L12 the graduated curve takes no more curve trades", refusal.refusal?.message === "This market moved to Uniswap.", refusal.refusal ?? refusal);
+  check("L12 console/network clean", errors.length === 0, errors);
+  state.graduated = { ...coin, pool };
+  save();
+  await browser.close();
+}
+
+// ---------------- stage: social (L8 like + follow, L14 reply thread, L13 watch/alert/plan, L15 portfolio + profile)
+const getJson = async (path) => (await fetch(`${API}${path}${path.includes("?") ? "&" : "?"}chainId=${CHAIN_ID}`)).json();
+
+async function socialStage() {
+  const coin = state.neon;
+  const alice = state.alice;
+  if (!coin || !alice) throw new Error("run the wallet and launch stages first");
+  const { browser, page, errors, address } = await open("bob");
+  await signIn(page);
+
+  // L8: on the feed, the newest Neon Rain card: like it and follow its creator.
+  await page.goto(`${APP}/social`, { waitUntil: "networkidle" });
+  await waitFor(page, "Neon Rain", 20000);
+  const card = page.getByText("Neon Rain", { exact: false }).locator("visible=true").first().locator("xpath=ancestor::div[.//*[@aria-label='Like' or @aria-label='Unlike']][1]");
+  const likeBefore = (await getJson(`/api/juno/likes?coins=${coin.token}&viewer=${address}`)).counts?.[coin.token];
+  if (likeBefore?.viewerLiked) await card.locator("[aria-label='Unlike']").first().click();
+  await page.waitForTimeout(1500);
+  await card.locator("[aria-label='Like']").first().click();
+  let likes;
+  for (let i = 0; i < 20; i++) { likes = (await getJson(`/api/juno/likes?coins=${coin.token}&viewer=${address}`)).counts?.[coin.token]; if (likes?.viewerLiked) break; await page.waitForTimeout(500); }
+  check("L8 like from the feed: stored against the wallet's session", likes?.viewerLiked === true && likes.likes >= 1, likes);
+  const followLabel = card.locator("[aria-label^='Follow '], [aria-label^='Unfollow ']").first();
+  if ((await followLabel.getAttribute("aria-label"))?.startsWith("Unfollow")) { await followLabel.click(); await page.waitForTimeout(1500); }
+  await card.locator("[aria-label^='Follow ']").first().click();
+  let follow;
+  for (let i = 0; i < 20; i++) { follow = await getJson(`/api/juno/follow?wallet=${alice.address}&viewer=${address}`); if (follow.viewerFollows) break; await page.waitForTimeout(500); }
+  check("L8 follow the creator from the feed", follow?.viewerFollows === true && follow.followers >= 1, { followers: follow?.followers, viewerFollows: follow?.viewerFollows });
+
+  // L14: the caption is the creator's post; reply under it.
+  const threadLink = card.getByText(/^(Reply|\d+ repl(y|ies))$/).first();
+  const hasThread = (await threadLink.count()) > 0;
+  let replied = false, replyCount = null, postId = null;
+  if (hasThread) {
+    await threadLink.click();
+    await page.waitForURL(/\/post\//, { timeout: 15000 });
+    postId = page.url().split("/post/")[1];
+    await waitFor(page, "City after rain", 20000);
+    const words = `nice shot ${Date.now().toString(36)}`;
+    await page.getByPlaceholder("Write a reply…", { exact: true }).fill(words);
+    await sheetButton(page, "Reply").last().click();
+    replied = await waitFor(page, words, 20000);
+    replyCount = (await (await fetch(`${API}/api/juno/posts/${postId}?lookup=1`)).json()).replyCount;
+  }
+  check("L14 the caption opens its thread and a reply lands in it", hasThread && replied && replyCount >= 1, { postId, replyCount });
+
+  // L13: watch the coin, set a price alert, start a weekly plan and put into it.
+  await page.goto(`${APP}/coin/${coin.token}`, { waitUntil: "networkidle" });
+  await waitFor(page, "Neon Rain", 20000);
+  const watch = page.locator("[aria-label='Watch'], [aria-label='Stop watching']").locator("visible=true").first();
+  if ((await watch.getAttribute("aria-label")) === "Stop watching") { await watch.click(); await page.waitForTimeout(1500); }
+  await page.locator("[aria-label='Watch']").locator("visible=true").first().click();
+  let watching;
+  for (let i = 0; i < 20; i++) { watching = await getJson(`/api/juno/watchlist?wallet=${address}`); if (watching.items?.some((w) => (w.coin?.address ?? w.address ?? w.token) === coin.token)) break; await page.waitForTimeout(500); }
+  const watched = watching.items?.find((w) => (w.coin?.address ?? w.address ?? w.token) === coin.token);
+  check("L13 watch from the coin page: on the wallet's watchlist", !!watched, watching.items?.length);
+
+  await tap(page, "Details", { last: true });
+  await tap(page, "Set", { last: true });
+  const priceNow = (await coinDetail(coin.token)).coin.priceUsd;
+  await page.getByPlaceholder("0.00", { exact: true }).locator("visible=true").last().fill((priceNow * 2).toFixed(14).replace(/0+$/, ""));
+  await sheetButton(page, "Set alert").last().click();
+  let alert;
+  for (let i = 0; i < 20; i++) { alert = (await getJson(`/api/juno/watchlist?wallet=${address}`)).items?.find((w) => (w.coin?.address ?? w.address ?? w.token) === coin.token); if (alert?.alertPrice) break; await page.waitForTimeout(500); }
+  check("L13 price alert set from the coin page, at the price typed", !!alert?.alertPrice && Math.abs(alert.alertPrice / (priceNow * 2) - 1) < 1e-3, { alertPrice: alert?.alertPrice, typed: priceNow * 2 });
+
+  await page.waitForTimeout(1000);
+  const plansBefore = new Set(((await getJson(`/api/juno/plans?wallet=${address}`)).plans ?? []).map((p) => p.id));
+  await page.getByRole("button", { name: /^(Buy this every week|Add another schedule)$/ }).locator("visible=true").last().click();
+  await page.waitForTimeout(1000);
+  await page.getByPlaceholder("0.00", { exact: true }).locator("visible=true").last().fill("0.001");
+  await sheetButton(page, "Start").last().click();
+  let plans;
+  const isNew = (p) => (p.coin?.address ?? p.token) === coin.token && !plansBefore.has(p.id);
+  for (let i = 0; i < 20; i++) { plans = await getJson(`/api/juno/plans?wallet=${address}`); if (plans.plans?.some(isNew)) break; await page.waitForTimeout(500); }
+  const plan = plans.plans?.find(isNew);
+  check("L13 weekly plan started from the coin page", !!plan && Number(plan.amount) === 0.001, plan && { amount: plan.amount, cadence: plan.cadence });
+
+  await page.waitForTimeout(1000);
+  const coinPlans = async () => ((await getJson(`/api/juno/plans?wallet=${address}`)).plans ?? []).filter((p) => (p.coin?.address ?? p.token) === coin.token);
+  const sum = (list) => list.reduce((total, p) => total + (p.contributed ?? 0), 0);
+  const contributedBefore = sum(await coinPlans());
+  const putIn = page.getByRole("button", { name: /^Put in .* ETH$/ }).locator("visible=true").last();
+  console.log(`  (plan button: ${await putIn.textContent().catch(() => "none")})`);
+  await putIn.click();
+  await page.waitForTimeout(1200);
+  await waitFor(page, "You'll receive", 20000);
+  await sheetButton(page, "Buy").last().click();
+  const put = await waitFor(page, "Done", 120000);
+  await tap(page, "Done", { last: true });
+  let contributedAfter = contributedBefore;
+  for (let i = 0; i < 20; i++) { contributedAfter = sum(await coinPlans()); if (contributedAfter > contributedBefore) break; await page.waitForTimeout(500); }
+  check("L13 a plan contribution is a real buy and counts toward its plan", put && Math.abs(contributedAfter - contributedBefore - 0.001) < 1e-9, { before: contributedBefore, after: contributedAfter });
+  check("L8/L13/L14 console/network clean", errors.length === 0, errors);
+  await browser.close();
+
+  // L15: the creator's public profile, and a holder's portfolio.
+  const viewer = await open("bob");
+  await signIn(viewer.page);
+  await viewer.page.goto(`${APP}/trader/${alice.address}`, { waitUntil: "networkidle" });
+  const named = await waitFor(viewer.page, alice.name, 20000);
+  const following = await viewer.page.getByRole("button", { name: "Following", exact: true }).locator("visible=true").count();
+  const soldOutListed = (await text(viewer.page)).includes("0 jTSLA");
+  check("L15 the creator's profile: claimed name, the viewer's follow, no sold-out holdings", named && following > 0 && !soldOutListed, { name: alice.name, following, soldOutListed });
+  const holder = state.graduated ? await open("carol") : null;
+  if (holder) {
+    await signIn(holder.page);
+    const portfolio = await (await fetch(`${API}/api/juno/portfolio/${holder.address}?chainId=${CHAIN_ID}`)).json();
+    const position = portfolio.positions?.find((p) => (p.token ?? p.address ?? p.coin?.address) === state.graduated.token);
+    await holder.page.goto(`${APP}/profile`, { waitUntil: "networkidle" });
+    const shown = await waitFor(holder.page, "Last Light", 20000);
+    check("L15 portfolio: the graduated coin is held, valued, and shown on the profile", !!position && (position.value ?? position.valueUsd ?? 0) > 0 && shown, position && { value: position.value ?? position.valueUsd, total: portfolio.totalValue });
+    check("L15 console/network clean", viewer.errors.length === 0 && holder.errors.length === 0, [...viewer.errors, ...holder.errors]);
+    await holder.browser.close();
+  }
+  await viewer.browser.close();
+}
+
+const stages = { wallet: walletStage, launch: launchStage, trade: tradeStage, trackers: trackerStage, graduate: graduateStage, social: socialStage };
 const only = process.argv[2];
 for (const [name, run] of Object.entries(stages)) if (!only || only === name) await run();
 console.log(failures ? `\n${failures} FAILED` : "\nall local items pass");

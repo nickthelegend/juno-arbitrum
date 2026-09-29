@@ -87,7 +87,7 @@ export async function recordTransaction(chainId: ChainId, txHash: Hex): Promise<
 
 /**
  * Plan flow F: once a buy fills a curve, the server calls the permissionless
- * `graduate()` itself (Sepolia only, from the faucet key, a few cents of test
+ * `graduate()` itself (test networks only, from the faucet key, a few cents of test
  * gas), so a full curve never sits waiting for someone to push it. Set
  * `JUNO_AUTO_GRADUATE=0` to turn it off.
  */

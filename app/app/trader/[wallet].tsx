@@ -134,7 +134,9 @@ export default function TraderScreen() {
   }, [me, follows, followers, saving, target]);
 
   const self = sameAddress(me.address, target);
-  const positions = portfolio.data?.positions ?? [];
+  // Holdings are what is still held; a sold-out position keeps its realised
+  // P&L in the totals but is not listed as held.
+  const positions = (portfolio.data?.positions ?? []).filter((position) => position.balance > 0);
 
   if (!valid) {
     return (

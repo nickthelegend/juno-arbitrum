@@ -20,13 +20,8 @@ import { theme } from "../theme";
  * a separate decision. A sheet keeps the market on screen behind the scrim, so
  * reading the room and acting on it are the same visit.
  *
- * ## Liking is local, and says so
- *
- * There is no likes table, and inventing a number that only exists on this
- * phone would be the exact kind of fabricated figure this app refuses
- * everywhere else. So the heart is a **draft of a reaction**: it fills, it
- * counts nothing, and no total is displayed beside it. When a likes table
- * exists the control is already here and the count can become real.
+ * Comments carry no heart: likes are stored per coin and per post (the feed
+ * card and the post page), and a comment has no row to count one against.
  */
 /**
  * What the sheet is a conversation about.

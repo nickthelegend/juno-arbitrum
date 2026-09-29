@@ -134,6 +134,22 @@ bash scripts/deploy-api.sh                 # deploy the API to Vercel (env files
 cd app && npm i && npx expo start
 ```
 
+### On a local Arbitrum node
+
+The whole stack on a Nitro dev node (chain 412346): contracts including the
+Stylus `CurveMath`, a real Uniswap v3 deployment, local Postgres and Mongo, and
+a web build that signs with a browser wallet.
+
+```bash
+bash scripts/localnet/up.sh                       # node, infra, contracts, address book
+(cd scripts && npx tsx localnet/trackers.ts)      # TSLA / NVDA / AAPL trackers
+(cd server && set -a && . ./.env.localnet && set +a && npx next dev --port 3111)
+(cd app && EXPO_PUBLIC_API_URL=http://localhost:3111 EXPO_PUBLIC_CHAIN_ID=412346 \
+  EXPO_PUBLIC_RPC_URL=http://localhost:8747 EXPO_PUBLIC_WALLET=injected \
+  npx expo export --platform web --output-dir dist-local && npx serve -s dist-local -l 8091)
+node scripts/localnet/e2e.mjs                     # L1-L15 through the UI (docs/TEST-PLAN.md)
+```
+
 See [`server/README.md`](server/README.md) for the API's environment and scripts.
 
 ## Security

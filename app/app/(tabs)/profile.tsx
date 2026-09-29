@@ -100,6 +100,9 @@ export default function ProfileScreen() {
   );
 
   const data = portfolio.data;
+  // What is still held. A sold-out position stays in the portfolio for its
+  // trades and realised P&L, but it is not a holding.
+  const held = useMemo(() => (data?.positions ?? []).filter((position) => position.balance > 0), [data?.positions]);
   const currency = data?.currency === "mixed" ? "USD" : (data?.currency ?? "USD");
 
   /*
@@ -247,7 +250,7 @@ export default function ProfileScreen() {
 
           <Entry>
             <Row>
-              <Stat value={counted(data?.positions.length, data?.partial)} label="Positions" />
+              <Stat value={counted(data ? held.length : undefined, data?.partial)} label="Positions" />
               <Stat
                 value={pnl === null ? "—" : money(pnl, currency)}
                 // Zero is neither a gain nor a loss, and it was rendering green.
@@ -285,7 +288,7 @@ export default function ProfileScreen() {
             <Card>
               <Body muted>Holdings could not be read.</Body>
             </Card>
-          ) : data.positions.length === 0 ? (
+          ) : held.length === 0 ? (
             <Card>
               <Body muted>
                 {data.partial
@@ -294,7 +297,7 @@ export default function ProfileScreen() {
               </Body>
             </Card>
           ) : (
-            data!.positions.map((position) => (
+            held.map((position) => (
               // A holding opens its coin, as a watched coin and a plan do.
               <Tappable
                 key={position.baseMint}

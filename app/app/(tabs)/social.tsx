@@ -113,13 +113,17 @@ export default function SocialScreen() {
 
   /** The newest thing each coin's creator wrote about it. */
   const captions = useMemo(() => {
-    const map = new Map<string, string>();
+    const creators = new Map((markets.data?.posts ?? []).map((coin) => [coin.address, coin.creator.wallet.toLowerCase()]));
+    const map = new Map<string, { body: string; id: string; replies: number }>();
     for (const item of record.data?.items ?? []) {
       if (item.kind !== "post" || !item.coin || map.has(item.coin.address)) continue;
-      map.set(item.coin.address, item.body);
+      // Only the creator's own words caption their coin; anyone else's post
+      // about it is a post, not the caption.
+      if (creators.get(item.coin.address) !== item.author.wallet.toLowerCase()) continue;
+      map.set(item.coin.address, { body: item.body, id: item.id, replies: item.replyCount });
     }
     return map;
-  }, [record.data?.items]);
+  }, [record.data?.items, markets.data?.posts]);
 
   const refresh = () => {
     invalidateMarkets();
@@ -260,7 +264,12 @@ export default function SocialScreen() {
               <FeedCard
                 key={coin.address}
                 coin={coin}
-                caption={captions.get(coin.address) ?? coin.description ?? null}
+                caption={captions.get(coin.address)?.body ?? coin.description ?? null}
+                thread={captions.get(coin.address) ?? null}
+                onOpenThread={() => {
+                  const thread = captions.get(coin.address);
+                  if (thread) router.push(`/post/${thread.id}`);
+                }}
                 // Unknown while the record loads — "No buyers yet" would be a
                 // claim made before reading.
                 buyers={record.loading ? null : (buyers.get(coin.address) ?? { wallets: [], handles: [] })}

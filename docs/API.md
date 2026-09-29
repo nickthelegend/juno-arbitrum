@@ -114,6 +114,7 @@ the same shape (with the balance checks too) instead of a 400.
 
 ## Other changes
 
+- **Faucet eligibility:** `GET /api/juno/faucet?chainId&wallet` adds `eligibility: { eligible: true } | { eligible: false, scope, retryAfterSeconds, message }` for that wallet from the caller's network, so the app can show the wait instead of asking.
 - **Faucet:** `POST /api/juno/faucet { wallet, chainId }` sends 0.02 ETH plus 1,000 Juno test USDC on test networks only (Sepolia, and the local node). It returns `{ eth: txHash, usdc: txHash | null }`, 429 with `retryAfterSeconds` when rate-limited, and 503 when the faucet is empty.
 - **Balance:** `GET /api/juno/tx/balance?wallet&chainId` returns `{ eth: number, usdc: number, tokens?: … }`.
 - **Profiles:** name claims are signed with EIP-191 (`personal_sign`) over exactly

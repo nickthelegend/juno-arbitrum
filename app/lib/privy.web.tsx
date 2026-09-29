@@ -12,6 +12,7 @@ import { arbitrum, arbitrumSepolia } from "viem/chains";
 
 import { CHAIN } from "./chain";
 import type { PrivyBridge, TxRequest } from "./privy.types";
+import { useInjectedBridge } from "./injected.web";
 
 /**
  * Privy in the browser: email with an embedded EVM wallet, or a browser
@@ -38,7 +39,15 @@ export const PRIVY_ENABLED = true;
 
 const SUPPORTED = [CHAIN, ...[arbitrumSepolia, arbitrum].filter((chain) => chain.id !== CHAIN.id)];
 
+/**
+ * `EXPO_PUBLIC_WALLET=injected`: the browser's own wallet instead of Privy,
+ * for networks Privy is not set up for (the local dev node). Inlined at build
+ * time, so one build is one or the other.
+ */
+const INJECTED = process.env.EXPO_PUBLIC_WALLET === "injected";
+
 export function PrivyRoot({ children }: { children: React.ReactNode }) {
+  if (INJECTED) return <>{children}</>;
   return (
     <PrivyProvider
       appId={APP_ID}
@@ -81,6 +90,11 @@ function pickWallet(wallets: ConnectedWallet[], linked: string | undefined): Con
 }
 
 export function usePrivyBridge(): PrivyBridge {
+  // A build-time constant: the same branch on every render, so hook order holds.
+  return INJECTED ? useInjectedBridge() : usePrivyWebBridge();
+}
+
+function usePrivyWebBridge(): PrivyBridge {
   const { ready, authenticated, user, login, logout } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   const { createWallet } = useCreateWallet();

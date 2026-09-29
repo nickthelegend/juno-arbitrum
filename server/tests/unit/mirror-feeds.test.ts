@@ -35,23 +35,23 @@ describe("mirrorFeeds", () => {
   it("copies the real answer and timestamp when the price moved 0.5% or more", async () => {
     reads.set(REAL, round(35_467_000_000n, 2_000_000n));
     reads.set(MOCK, round(35_753_500_000n, 1_999_000n)); // 0.80% apart, 1000 s behind
-    expect(await mirrorFeeds(KEY)).toEqual([{ symbol: "TSLA", hash: "0xhash" }]);
+    expect(await mirrorFeeds(KEY, 421614)).toEqual([{ symbol: "TSLA", hash: "0xhash" }]);
     expect(writeContract).toHaveBeenCalledWith(expect.objectContaining({ address: MOCK, functionName: "setAnswer", args: [35_467_000_000n, 2_000_000n] }));
   });
 
   it("copies it when the real feed is 4 hours ahead, even without a move", async () => {
     reads.set(REAL, round(35_467_000_000n, 2_000_000n + 4n * 3600n));
     reads.set(MOCK, round(35_467_000_000n, 2_000_000n));
-    await mirrorFeeds(KEY);
+    await mirrorFeeds(KEY, 421614);
     expect(writeContract).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a mirror within 0.5% and 4 hours alone, and never writes an identical round", async () => {
     reads.set(REAL, round(35_467_000_000n, 2_000_000n + 3600n));
     reads.set(MOCK, round(35_500_000_000n, 2_000_000n));
-    expect(await mirrorFeeds(KEY)).toEqual([]);
+    expect(await mirrorFeeds(KEY, 421614)).toEqual([]);
     reads.set(MOCK, round(35_467_000_000n, 2_000_000n + 3600n));
-    expect(await mirrorFeeds(KEY)).toEqual([]);
+    expect(await mirrorFeeds(KEY, 421614)).toEqual([]);
     expect(writeContract).not.toHaveBeenCalled();
   });
 });

@@ -4,7 +4,7 @@ import { createWalletClient, fallback, http, type Hex, type Log } from "viem";
 
 import { junoCurveAbi } from "@config/abi";
 import { CallerError } from "./api";
-import { publicClient, requireDeployment, rpcUrls, SEPOLIA, viemChain, type ChainId } from "./chains";
+import { isTestnet, publicClient, requireDeployment, rpcUrls, viemChain, type ChainId } from "./chains";
 import { faucetAccount } from "./faucet";
 import { recordLogs } from "./indexer";
 import { invalidateCurve, readCurveState } from "./onchain";
@@ -97,7 +97,7 @@ async function maybeGraduate(
   factory: string,
   curves: Map<string, Pick<CurveRow, "token">>,
 ): Promise<{ curve: string; txHash: string } | null> {
-  if (chainId !== SEPOLIA || process.env.JUNO_AUTO_GRADUATE === "0" || !process.env.FAUCET_PRIVATE_KEY) return null;
+  if (!isTestnet(chainId) || process.env.JUNO_AUTO_GRADUATE === "0" || !process.env.FAUCET_PRIVATE_KEY) return null;
   const state = await readCurveState(chainId, curve);
   if (state.graduated || state.sold < state.curveSupply) return null;
 

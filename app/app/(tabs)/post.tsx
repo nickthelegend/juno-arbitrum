@@ -224,11 +224,11 @@ export default function PostScreen() {
         description: caption.trim() || undefined,
         curvePreset: preset,
         format: kind,
-        // Wallets and explorers want a still; a reel's is its poster.
-        imageUrl: uploaded.posterUrl ?? uploaded.url,
-        mimeType: uploaded.posterUrl ? "image/jpeg" : uploaded.mimeType,
+        // The media itself; a reel also carries its poster, which becomes the
+        // `image` wallets and explorers show (the video is `animation_url`).
         mediaUrl: uploaded.uri,
-        mediaMime: uploaded.mimeType,
+        mimeType: uploaded.mimeType,
+        posterUrl: uploaded.posterUri,
         width: uploaded.width,
         height: uploaded.height,
       });

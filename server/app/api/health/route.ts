@@ -41,7 +41,7 @@ export async function GET() {
     ),
     timed(async () => {
       const account = faucetAccount();
-      const balance = await publicClient(421614).getBalance({ address: account.address });
+      const balance = await publicClient(appChainId()).getBalance({ address: account.address });
       return { address: account.address.toLowerCase(), balanceEth: Number(balance) / 1e18, funded: balance >= FAUCET_FLOOR };
     }),
   ]);

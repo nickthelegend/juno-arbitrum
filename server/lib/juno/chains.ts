@@ -3,34 +3,58 @@ import "server-only";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { createPublicClient, fallback, http, type Chain, type PublicClient } from "viem";
+import { createPublicClient, defineChain, fallback, http, type Chain, type PublicClient } from "viem";
 import { arbitrum, arbitrumSepolia } from "viem/chains";
 
-import { ADDRESSES, APP_CHAIN_ID, type ChainAddresses } from "@config/addresses";
+import { ADDRESSES, APP_CHAIN_ID, LOCAL_CHAIN_ID, type ChainAddresses } from "@config/addresses";
 import { CallerError } from "./api";
 import type { Address } from "./address";
 
 /**
- * The two chains Juno runs on, and how to reach them.
+ * The chains Juno runs on, and how to reach them.
  *
  * Arbitrum Sepolia is the app's network. Arbitrum One is read-only for the
  * app (the mainnet proof is sent by scripts) and is also where the ETH/USD
- * reference price is read, for both chains.
+ * reference price is read, for every chain. Arbitrum Local is a Nitro dev
+ * node for end-to-end runs (scripts/localnet), offered only when
+ * `ARB_LOCAL_RPC` is set.
  */
 
 export const SEPOLIA = 421614 as const;
 export const ONE = 42161 as const;
-export type ChainId = typeof SEPOLIA | typeof ONE;
-export const SUPPORTED_CHAINS: readonly ChainId[] = [SEPOLIA, ONE];
+export const LOCAL = LOCAL_CHAIN_ID as 412346;
+export type ChainId = typeof SEPOLIA | typeof ONE | typeof LOCAL;
 
-const VIEM_CHAINS: Record<ChainId, Chain> = { [SEPOLIA]: arbitrumSepolia, [ONE]: arbitrum };
+const localEnabled = () => !!process.env.ARB_LOCAL_RPC?.trim();
+export const SUPPORTED_CHAINS: readonly ChainId[] = localEnabled() ? [SEPOLIA, ONE, LOCAL] : [SEPOLIA, ONE];
+
+/** Test networks: the faucet, mirrored stock feeds, auto-graduation. */
+export function isTestnet(chainId: ChainId): boolean {
+  return chainId !== ONE;
+}
 
 const PUBLIC_RPC: Record<ChainId, string> = {
   [SEPOLIA]: "https://sepolia-rollup.arbitrum.io/rpc",
   [ONE]: "https://arb1.arbitrum.io/rpc",
+  [LOCAL]: "http://localhost:8747",
 };
 
-const RPC_ENV: Record<ChainId, string> = { [SEPOLIA]: "ARB_SEPOLIA_RPC", [ONE]: "ARB_ONE_RPC" };
+const RPC_ENV: Record<ChainId, string> = { [SEPOLIA]: "ARB_SEPOLIA_RPC", [ONE]: "ARB_ONE_RPC", [LOCAL]: "ARB_LOCAL_RPC" };
+
+let localChain: Chain | null = null;
+function viemChainFor(chainId: ChainId): Chain {
+  if (chainId === SEPOLIA) return arbitrumSepolia;
+  if (chainId === ONE) return arbitrum;
+  localChain ??= defineChain({
+    id: LOCAL,
+    name: "Arbitrum Local",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: [process.env.ARB_LOCAL_RPC?.trim() || PUBLIC_RPC[LOCAL]] } },
+    // A dev node has no canonical Multicall3; scripts/localnet deploys one.
+    contracts: ADDRESSES[LOCAL].multicall3 ? { multicall3: { address: ADDRESSES[LOCAL].multicall3 } } : undefined,
+  });
+  return localChain;
+}
 
 /* ------------------------------------------------------------------ */
 /* The address book                                                    */
@@ -68,12 +92,12 @@ export function book(chainId: ChainId): ChainAddresses {
 
 export function appChainId(): ChainId {
   const fromEnv = Number(process.env.APP_CHAIN_ID);
-  if (fromEnv === SEPOLIA || fromEnv === ONE) return fromEnv;
+  if (isSupportedChain(fromEnv)) return fromEnv;
   return APP_CHAIN_ID as ChainId;
 }
 
 export function isSupportedChain(value: number): value is ChainId {
-  return value === SEPOLIA || value === ONE;
+  return value === SEPOLIA || value === ONE || (value === LOCAL && localEnabled());
 }
 
 /** A `chainId` from a query string or body; the app chain when absent. */
@@ -116,7 +140,7 @@ export function publicClient(chainId: ChainId): PublicClient {
   let client = clients.get(chainId);
   if (!client) {
     client = createPublicClient({
-      chain: VIEM_CHAINS[chainId],
+      chain: viemChainFor(chainId),
       transport: fallback(
         rpcUrls(chainId).map((url) => http(url, { retryCount: 1, retryDelay: 400, timeout: 20_000 })),
         { rank: false },
@@ -129,7 +153,7 @@ export function publicClient(chainId: ChainId): PublicClient {
 }
 
 export function viemChain(chainId: ChainId): Chain {
-  return VIEM_CHAINS[chainId];
+  return viemChainFor(chainId);
 }
 
 export function chainAddresses(chainId: ChainId): ChainAddresses {

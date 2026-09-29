@@ -34,13 +34,21 @@ export async function POST(request: Request) {
     const format = str("format");
     if (format && format !== "post" && format !== "reel") throw new CallerError('"format" must be "post" or "reel"');
 
+    // `mediaMime` names the media's own type when a caller put the poster's in
+    // `mimeType` (older app builds sent the poster as `imageUrl`/`mimeType`).
+    const mediaMime = str("mediaMime") || str("mimeType");
+    const mediaUrl = str("mediaUrl") || str("imageUrl");
+    const imageUrl = str("imageUrl");
+    const posterUrl =
+      str("posterUrl") || str("posterUri") || (mediaMime.startsWith("video") && imageUrl && imageUrl !== mediaUrl ? imageUrl : "");
+
     const metadata = buildMetadata({
       name,
       symbol,
       description: str("description"),
-      mediaUrl: str("mediaUrl") || str("imageUrl") || undefined,
-      mimeType: str("mimeType") || undefined,
-      posterUrl: str("posterUrl") || str("posterUri") || undefined,
+      mediaUrl: mediaUrl || undefined,
+      mimeType: mediaMime || undefined,
+      posterUrl: posterUrl || undefined,
       format: (format || undefined) as "post" | "reel" | undefined,
       creator: maybeAddress(body.creator) ?? undefined,
       width: num("width"),

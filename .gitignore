@@ -20,3 +20,7 @@ config/addresses.local.json
 .venv-slither/
 .vercel/
 __pycache__/
+dist-local/
+.env.localnet
+contracts/broadcast/*/412346/
+contracts/cache/*412346*

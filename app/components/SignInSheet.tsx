@@ -98,6 +98,11 @@ export function SignInSheet({
             )}
             <Caption>{privy.error ?? `Wallet: ${privy.walletStatus}`}</Caption>
           </Waiting>
+        ) : privy.emailLogin === false ? (
+          <>
+            <Button label="Connect a browser wallet" onPress={() => privy.openModal?.()} loading={privy.status === "creating"} tall />
+            <Caption>MetaMask, Rabby or any browser wallet. It signs every trade itself.</Caption>
+          </>
         ) : step === "email" ? (
           <>
             <Field>
@@ -154,7 +159,7 @@ export function SignInSheet({
 
         {error ? <ErrorText>{error}</ErrorText> : null}
         {privy.status === "loading" && !creating ? <Caption>Connecting to Privy…</Caption> : null}
-        <Secured>Secured by Privy</Secured>
+        {privy.emailLogin === false ? null : <Secured>Secured by Privy</Secured>}
       </Sheet>
     </BottomSheet>
   );

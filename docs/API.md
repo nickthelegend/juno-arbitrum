@@ -108,10 +108,13 @@ from another wallet is `401 {reason:"BadSignature"}`.
 
 `tx/swap` also takes `quoteOnly: true` (no `trader`): the quote with no steps
 and no balance checks, for visitors; the band and staleness checks still run.
+A refusal there is `200 { quote: null, steps: [], refusal: { message, reason } }`.
+A signed-in caller quoting as the user types sends `refusalAsAnswer: true` to get
+the same shape (with the balance checks too) instead of a 400.
 
 ## Other changes
 
-- **Faucet:** `POST /api/juno/faucet { wallet, chainId }` sends 0.02 ETH plus 1,000 Juno test USDC on Sepolia only. It returns `{ eth: txHash, usdc: txHash | null }`, 429 with `retryAfterSeconds` when rate-limited, and 503 when the faucet is empty.
+- **Faucet:** `POST /api/juno/faucet { wallet, chainId }` sends 0.02 ETH plus 1,000 Juno test USDC on test networks only (Sepolia, and the local node). It returns `{ eth: txHash, usdc: txHash | null }`, 429 with `retryAfterSeconds` when rate-limited, and 503 when the faucet is empty.
 - **Balance:** `GET /api/juno/tx/balance?wallet&chainId` returns `{ eth: number, usdc: number, tokens?: … }`.
 - **Profiles:** name claims are signed with EIP-191 (`personal_sign`) over exactly
   `Juno name: ${name}\nWallet: ${lowercaseAddress}\nIssued: ${isoTime}`.

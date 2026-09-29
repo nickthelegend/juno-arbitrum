@@ -6,7 +6,7 @@ import { privateKeyToAccount } from "viem/accounts";
 
 import { mockAggregatorAbi } from "@config/abi";
 import { aggregatorAbi } from "./chainlink";
-import { ONE, publicClient, rpcUrls, SEPOLIA, stockFeeds, viemChain, type ChainId } from "./chains";
+import { book, ONE, publicClient, rpcUrls, stockFeeds, viemChain, type ChainId } from "./chains";
 
 /**
  * Keep the Sepolia stock feeds in step with Chainlink's Arbitrum One feeds,
@@ -30,12 +30,12 @@ let running = false;
 
 export function mirrorFeedsAfter(chainId: ChainId): void {
   const key = process.env.KEEPER_PRIVATE_KEY;
-  if (chainId !== SEPOLIA || !key || running || Date.now() - last < THROTTLE_MS) return;
+  if (!book(chainId)?.feedsAreMocks || !key || running || Date.now() - last < THROTTLE_MS) return;
   last = Date.now();
   after(async () => {
     running = true;
     try {
-      await mirrorFeeds(key.startsWith("0x") ? (key as `0x${string}`) : `0x${key}`);
+      await mirrorFeeds(key.startsWith("0x") ? (key as `0x${string}`) : `0x${key}`, chainId);
     } catch (error) {
       console.warn("[juno mirror-feeds]", error instanceof Error ? error.message : error);
     } finally {
@@ -44,13 +44,13 @@ export function mirrorFeedsAfter(chainId: ChainId): void {
   });
 }
 
-export async function mirrorFeeds(key: `0x${string}`): Promise<Array<{ symbol: string; hash: string }>> {
-  const sepolia = publicClient(SEPOLIA);
+export async function mirrorFeeds(key: `0x${string}`, chainId: ChainId): Promise<Array<{ symbol: string; hash: string }>> {
+  const sepolia = publicClient(chainId);
   const one = publicClient(ONE);
-  const wallet = createWalletClient({ account: privateKeyToAccount(key), chain: viemChain(SEPOLIA), transport: http(rpcUrls(SEPOLIA)[0]) });
+  const wallet = createWalletClient({ account: privateKeyToAccount(key), chain: viemChain(chainId), transport: http(rpcUrls(chainId)[0]) });
   const real = new Map(stockFeeds(ONE).map((entry) => [entry.symbol, entry.feed]));
   const written: Array<{ symbol: string; hash: string }> = [];
-  for (const { symbol, feed: mock } of stockFeeds(SEPOLIA)) {
+  for (const { symbol, feed: mock } of stockFeeds(chainId)) {
     const source = real.get(symbol);
     if (!source) continue;
     const [[, answer, , updatedAt], [, mockAnswer, , mockUpdated]] = await Promise.all([

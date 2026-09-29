@@ -30,6 +30,17 @@ contract Deploy is Script {
         vm.startBroadcast(key);
         if (block.chainid == 421614) {
             _sepolia(curveMath, deployer, treasury);
+        } else if (block.chainid == 412346) {
+            // A local Nitro dev node: WETH9 and Uniswap v3 were deployed by
+            // scripts/localnet from Uniswap's published artifacts.
+            _testnet(
+                curveMath,
+                deployer,
+                treasury,
+                vm.envAddress("LOCAL_WETH"),
+                vm.envAddress("LOCAL_POSITION_MANAGER"),
+                vm.envAddress("LOCAL_UNISWAP_FACTORY")
+            );
         } else if (block.chainid == 42161) {
             _one(curveMath, deployer, treasury);
         } else {
@@ -39,12 +50,33 @@ contract Deploy is Script {
     }
 
     function _sepolia(address curveMath, address deployer, address treasury) internal {
-        JunoFactory factory = new JunoFactory(
-            ICurveMath(curveMath),
+        _testnet(
+            curveMath,
+            deployer,
+            treasury,
             0x980B62Da83eFf3D4576C647993b0c1D7faf17c73, // WETH
             0x6b2937Bde17889EDCf8fbD8dE31C3C2a70Bc4d65, // NonfungiblePositionManager
-            0x248AB79Bbb9bC29bB72f7Cd42F17e054Fc40188e, // UniswapV3Factory
-            address(0), // no sequencer uptime feed on Sepolia
+            0x248AB79Bbb9bC29bB72f7Cd42F17e054Fc40188e // UniswapV3Factory
+        );
+    }
+
+    /// A test network: Juno's factory, faucet-mintable TestUSDC, and three
+    /// MockAggregators seeded from the real Arbitrum One feeds (kept in step
+    /// by the API's feed mirroring and scripts/keep-feeds-fresh.ts).
+    function _testnet(
+        address curveMath,
+        address deployer,
+        address treasury,
+        address weth,
+        address positionManager,
+        address uniswapFactory
+    ) internal {
+        JunoFactory factory = new JunoFactory(
+            ICurveMath(curveMath),
+            weth,
+            positionManager,
+            uniswapFactory,
+            address(0), // no sequencer uptime feed on a test network
             treasury,
             deployer
         );

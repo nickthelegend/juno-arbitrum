@@ -4,7 +4,7 @@ import { createWalletClient, fallback, http, parseAbi, parseEther, parseUnits, t
 import { nonceManager, privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 
 import { CallerError } from "./api";
-import { deployment, publicClient, rpcUrls, SEPOLIA, viemChain, type ChainId } from "./chains";
+import { deployment, isTestnet, publicClient, rpcUrls, viemChain, type ChainId } from "./chains";
 import { db, ensureIndexes } from "./social";
 
 /**
@@ -79,7 +79,7 @@ async function claimsCollection() {
 }
 
 export async function faucetStatus(chainId: ChainId) {
-  if (chainId !== SEPOLIA) throw new CallerError("The faucet only runs on Arbitrum Sepolia.", 404);
+  if (!isTestnet(chainId)) throw new CallerError("The faucet only runs on test networks.", 404);
   const faucet = faucetAccount();
   const balance = await publicClient(chainId).getBalance({ address: faucet.address });
   return {
@@ -93,7 +93,7 @@ export async function faucetStatus(chainId: ChainId) {
 }
 
 export async function drip(chainId: ChainId, wallet: string, ip: string) {
-  if (chainId !== SEPOLIA) throw new CallerError("The faucet only runs on Arbitrum Sepolia.", 404);
+  if (!isTestnet(chainId)) throw new CallerError("The faucet only runs on test networks.", 404);
   const faucet = faucetAccount();
   const client = publicClient(chainId);
 

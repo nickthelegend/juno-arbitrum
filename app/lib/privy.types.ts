@@ -18,6 +18,8 @@ export type TxRequest = {
  */
 export type PrivyBridge = {
   enabled: boolean;
+  /** Email one-time-code sign-in is offered (Privy). False for a browser-wallet-only bridge. */
+  emailLogin?: boolean;
   ready: boolean;
   /** Where sign-in has got to: no session, signed in with the wallet on its way, or usable. */
   status: "loading" | "signed-out" | "creating" | "error" | "ready";

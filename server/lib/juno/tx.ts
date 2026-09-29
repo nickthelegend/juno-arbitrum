@@ -18,7 +18,7 @@ import {
 
 import { junoCurveAbi, junoFactoryAbi } from "@config/abi";
 import { CallerError } from "./api";
-import { publicClient, requireDeployment, type ChainId, SEPOLIA } from "./chains";
+import { isTestnet, publicClient, requireDeployment, type ChainId } from "./chains";
 import { quoteUsdRate } from "./chainlink";
 import { CURVE_PRESETS, POST_SUPPLY_UNITS } from "./curves";
 import {
@@ -344,7 +344,7 @@ export function initialMarketCapEth(chainId: ChainId): number {
   const raw = process.env[`JUNO_INITIAL_MCAP_ETH_${chainId}`] ?? process.env.JUNO_INITIAL_MCAP_ETH;
   const n = Number(raw);
   if (raw && Number.isFinite(n) && n > 0) return n;
-  return chainId === SEPOLIA ? 0.02 : 1.0;
+  return isTestnet(chainId) ? 0.02 : 1.0;
 }
 
 /** p0 in quote base units per whole token: market cap spread over the supply. */
@@ -647,10 +647,13 @@ export async function buildSwap(request: SwapRequest): Promise<TxBuild<SwapQuote
       fillsCurve: state.sold + q.tokensOut >= state.curveSupply,
     };
   } else {
-    const tokensIn = parseAmount(request.amountIn, 18, "amountIn");
+    let tokensIn = parseAmount(request.amountIn, 18, "amountIn");
     const quoteOnly = request.quoteOnly === true;
     const [held] = quoteOnly ? [tokensIn] : await tokenBalances(chainId, [{ token: row.token, owner: trader }]);
     if (held === null) throw new Error("Token balance read failed");
+    // "Sell 100%" arrives as a float of the holding, which can land a hair
+    // above the exact balance. Within a billionth, it means everything.
+    if (held < tokensIn && held > 0n && tokensIn - held <= tokensIn / 1_000_000_000n) tokensIn = held;
     if (held < tokensIn) {
       throw new CallerError(`Not enough ${row.symbol}: you hold ${fmt(held, 18)}.`, 400, {
         reason: "InsufficientFunds",

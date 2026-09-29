@@ -35,7 +35,7 @@ import {
 import { juno, type Plan, type WatchItem } from "../../lib/api";
 import { useLinkedState } from "../../lib/linked";
 import { money, tokens, useApi } from "../../lib/useApi";
-import { explorer, NETWORK_LABEL, NETWORK_NAME } from "../../lib/chain";
+import { explorer, EXPLORER_NAME, NETWORK_LABEL, NETWORK_NAME } from "../../lib/chain";
 import { useWallet } from "../../lib/wallet";
 import { theme } from "../../theme";
 
@@ -146,7 +146,11 @@ export default function ProfileScreen() {
       <Page edges={["top"]}>
         <Placeholder
           title="No wallet yet"
-          detail={`Sign in with your email. Privy creates an Arbitrum wallet for you, with no seed phrase. ${NETWORK_LABEL}.`}
+          detail={
+            wallet.emailLogin
+              ? `Sign in with your email. Privy creates an Arbitrum wallet for you, with no seed phrase. ${NETWORK_LABEL}.`
+              : `Connect the wallet in your browser. ${NETWORK_LABEL}.`
+          }
           action={
             // Not `.then(portfolio.refresh)`: that refresh was captured before
             // the wallet existed, re-ran the read with no address, and its
@@ -367,7 +371,7 @@ export default function ProfileScreen() {
               {NETWORK_NAME === "Arbitrum One" ? "" : " Everything here is test ETH and test USDC: no real money."}
             </Body>
             <Button
-              label="View this wallet on Arbiscan"
+              label={`View this wallet on ${EXPLORER_NAME}`}
               variant="quiet"
               onPress={() => void Linking.openURL(explorer("address", wallet.address!))}
               style={{ marginTop: 12 }}

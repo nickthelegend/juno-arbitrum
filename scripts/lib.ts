@@ -5,11 +5,11 @@
 import { config as loadEnv } from "dotenv";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { createPublicClient, createWalletClient, http, type Chain } from "viem";
+import { createPublicClient, createWalletClient, defineChain, http, type Chain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum, arbitrumSepolia } from "viem/chains";
 
-import { ADDRESSES } from "../config/addresses";
+import { ADDRESSES, LOCAL_CHAIN_ID } from "../config/addresses";
 
 loadEnv({ path: fileURLToPath(new URL("../.env", import.meta.url)) });
 
@@ -22,6 +22,10 @@ export function need(name: string): string {
 export function chainFor(id: number): { chain: Chain; rpc: string } {
   if (id === 421614) return { chain: arbitrumSepolia, rpc: process.env.RPC_OVERRIDE ?? need("ARB_SEPOLIA_RPC") };
   if (id === 42161) return { chain: arbitrum, rpc: process.env.RPC_OVERRIDE ?? need("ARB_ONE_RPC") };
+  if (id === LOCAL_CHAIN_ID) {
+    const rpc = process.env.ARB_LOCAL_RPC ?? "http://localhost:8747";
+    return { chain: localChain(rpc), rpc };
+  }
   throw new Error(`unsupported chain ${id}`);
 }
 
@@ -72,4 +76,14 @@ export const ONE_FEEDS = ADDRESSES[42161].feeds as Record<"TSLA" | "NVDA" | "AAP
 
 export function explorerTx(id: number, hash: string) {
   return `${ADDRESSES[id].explorer}/tx/${hash}`;
+}
+
+/** A local Arbitrum Nitro dev node (chain 412346), with Stylus. */
+export function localChain(rpc = process.env.ARB_LOCAL_RPC ?? "http://localhost:8747"): Chain {
+  return defineChain({
+    id: LOCAL_CHAIN_ID,
+    name: "Arbitrum Local",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: [rpc] } },
+  });
 }

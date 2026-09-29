@@ -3,7 +3,7 @@ import { parseEventLogs, type Hex, type TransactionReceipt } from "viem";
 import { junoFactoryAbi } from "@config/abi";
 
 import { juno, type TxRecord, type TxStep } from "./api";
-import { CHAIN_ID, chainFor, describeTxError, publicClient, TxError } from "./chain";
+import { CHAIN_ID, chainFor, describeTxError, EXPLORER_NAME, publicClient, TxError } from "./chain";
 import { PrivyRoot, usePrivyBridge } from "./privy";
 import { forgetSession, setSessionSigner } from "./session";
 import { SignInSheet } from "../components/SignInSheet";
@@ -51,6 +51,8 @@ export type WalletState = {
   ready: boolean;
   /** True while a transaction or a signature is in flight. */
   signing: boolean;
+  /** Email sign-in (Privy) versus a browser wallet the user brings. */
+  emailLogin: boolean;
   /**
    * Send server-built steps in order, each confirmed before the next.
    *
@@ -232,7 +234,7 @@ function Wallet({ children }: { children: React.ReactNode }) {
             .waitForTransactionReceipt({ hash, timeout: 120_000, pollingInterval: 1_000 })
             .catch((error: unknown) => {
               throw new TxError({
-                message: `Sent, but no receipt yet (${hash.slice(0, 10)}…). Check it on Arbiscan before trying again.`,
+                message: `Sent, but no receipt yet (${hash.slice(0, 10)}…). Check it on ${EXPLORER_NAME} before trying again.`,
                 cancelled: false,
                 reason: describeTxError(error).reason,
               });
@@ -284,8 +286,8 @@ function Wallet({ children }: { children: React.ReactNode }) {
   }, [address, signMessage]);
 
   const value = useMemo<WalletState>(
-    () => ({ address, ready, signing, send, signMessage, connect, disconnect }),
-    [address, ready, signing, send, signMessage, connect, disconnect],
+    () => ({ address, ready, signing, emailLogin: privy.emailLogin !== false, send, signMessage, connect, disconnect }),
+    [address, ready, signing, privy.emailLogin, send, signMessage, connect, disconnect],
   );
 
   return (

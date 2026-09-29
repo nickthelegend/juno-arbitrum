@@ -923,10 +923,9 @@ export const juno = {
     description?: string;
     curvePreset: string;
     format?: "post" | "reel";
-    imageUrl?: string;
-    mimeType?: string;
     mediaUrl?: string;
-    mediaMime?: string;
+    mimeType?: string;
+    posterUrl?: string;
     width?: number | null;
     height?: number | null;
   }) => authed<{ uri: string }>("POST", "/api/juno/metadata", input),
@@ -946,6 +945,19 @@ export const juno = {
     /** Shorter than the default when the caller has a usable quote to fall back on. */
     timeoutMs?: number,
   ) => api.post<SwapBuild>("/api/juno/tx/swap", { chainId: CHAIN_ID, ...input }, timeoutMs),
+
+  /**
+   * A signed-in quote as the amount is typed: the steps when the trade can be
+   * made, and the curve's refusal (the band, a closed market, the balance) as
+   * an answer when it cannot.
+   */
+  quoteForWallet: (input: {
+    curve: string;
+    trader: string;
+    side: "buy" | "sell";
+    amountIn?: string;
+    amountOut?: string;
+  }) => api.post<SwapBuild | QuoteRefusal>("/api/juno/tx/swap", { chainId: CHAIN_ID, ...input, refusalAsAnswer: true }),
 
   /**
    * A visitor's quote: no wallet, nothing to sign. A refusal is an answer

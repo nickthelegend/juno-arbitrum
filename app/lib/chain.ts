@@ -4,6 +4,7 @@ import {
   BaseError,
   createPublicClient,
   decodeErrorResult,
+  defineChain,
   erc20Abi,
   formatUnits,
   getAddress,
@@ -24,9 +25,18 @@ import { arbitrum, arbitrumSepolia } from "viem/chains";
  * deploy scripts write to and the server reads.
  */
 
+/** A local Arbitrum Nitro dev node (scripts/localnet). */
+const arbitrumLocal = defineChain({
+  id: 412346,
+  name: "Arbitrum Local",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: [process.env.EXPO_PUBLIC_RPC_URL || "http://localhost:8747"] } },
+});
+
 const CHAINS: Record<number, Chain> = {
   [arbitrumSepolia.id]: arbitrumSepolia,
   [arbitrum.id]: arbitrum,
+  [arbitrumLocal.id]: arbitrumLocal,
 };
 
 export const CHAIN_ID: number = (() => {
@@ -42,6 +52,8 @@ export const IS_TESTNET = CHAIN_ID !== arbitrum.id;
 export const NETWORK_NAME = CHAIN_ADDRESSES.name;
 /** What the money is, said once wherever a balance is shown. */
 export const NETWORK_LABEL = IS_TESTNET ? `${NETWORK_NAME} · test ETH` : NETWORK_NAME;
+/** What the explorer links open: Arbiscan, or the local node's own explorer. */
+export const EXPLORER_NAME = CHAIN_ID === arbitrumLocal.id ? "the local explorer" : "Arbiscan";
 
 /**
  * Where the stock prices come from, said plainly. Chainlink publishes no
@@ -51,7 +63,7 @@ export const NETWORK_LABEL = IS_TESTNET ? `${NETWORK_NAME} · test ETH` : NETWOR
  */
 export const FEED_SOURCE = IS_TESTNET ? "Chainlink, mirrored" : "Chainlink";
 export const FEED_NOTE: string | null = IS_TESTNET
-  ? "Chainlink has no stock feeds on Arbitrum Sepolia, so these prices are Chainlink's Arbitrum One prices, copied here by Juno's feed keeper."
+  ? `Chainlink has no stock feeds on ${NETWORK_NAME}, so these prices are Chainlink's Arbitrum One prices, copied here by Juno's feed keeper.`
   : null;
 
 const RPC_URL = process.env.EXPO_PUBLIC_RPC_URL || CHAIN.rpcUrls.default.http[0];
@@ -66,7 +78,7 @@ export function chainFor(chainId: number): Chain | null {
   return CHAINS[chainId] ?? null;
 }
 
-/** An Arbiscan link. `address` covers contracts and tokens alike. */
+/** An explorer link (Arbiscan, or the local explorer). `address` covers contracts and tokens alike. */
 export function explorer(kind: "tx" | "address" | "token", id: string, chainId = CHAIN_ID): string {
   const base = (ADDRESSES[chainId] ?? CHAIN_ADDRESSES).explorer;
   return `${base}/${kind}/${id}`;

@@ -15,7 +15,9 @@ export const OPTIONS = junoOptions;
  * `quoteOnly: true` returns the quote with no steps and no balance checks, and
  * needs no `trader`: what a visitor sees before signing in. A quote the curve
  * refuses (the band, a closed market, sold out) is still an answer there:
- * `200 { quote: null, steps: [], refusal: { message, reason } }`.
+ * `200 { quote: null, steps: [], refusal: { message, reason } }`. A signed-in
+ * caller quoting as it types sends `refusalAsAnswer: true` for the same shape:
+ * "outside the band" is what the sheet shows, not a failed request.
  *
  * The curve is looked up in Juno's own index rather than trusted from the
  * caller, so this server never builds a transaction against an arbitrary
@@ -28,6 +30,7 @@ export async function POST(request: Request) {
     requireDeployment(chainId);
     const address = normAddress(body.curve ?? body.token ?? body.mint, "curve");
     const quoteOnly = body.quoteOnly === true;
+    const refusalAsAnswer = quoteOnly || body.refusalAsAnswer === true;
     const trader =
       quoteOnly && body.trader === undefined && body.owner === undefined
         ? "0x0000000000000000000000000000000000000000"
@@ -55,7 +58,7 @@ export async function POST(request: Request) {
       );
       return junoJson(build);
     } catch (error) {
-      if (quoteOnly && error instanceof CallerError && error.status === 400) {
+      if (refusalAsAnswer && error instanceof CallerError && error.status === 400) {
         const reason = typeof error.extra.reason === "string" ? error.extra.reason : null;
         return junoJson({ chainId, quote: null, steps: [], refusal: { message: error.message, reason } });
       }

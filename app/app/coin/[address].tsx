@@ -44,6 +44,7 @@ import {
   explorer,
   FEED_NOTE,
   FEED_SOURCE,
+  EXPLORER_NAME,
   NETWORK_NAME,
   sameAddress,
   shortAddress,
@@ -815,11 +816,11 @@ function DetailsTab({
       </Rows>
 
       <LinkTap onPress={() => Linking.openURL(explorer("token", coin.address, coin.chainId))}>
-        <LinkText>The token on Arbiscan</LinkText>
+        <LinkText>The token on {EXPLORER_NAME}</LinkText>
         <ExternalGlyph />
       </LinkTap>
       <LinkTap onPress={() => Linking.openURL(explorer("address", coin.pool, coin.chainId))}>
-        <LinkText>The curve contract on Arbiscan</LinkText>
+        <LinkText>The curve contract on {EXPLORER_NAME}</LinkText>
         <ExternalGlyph />
       </LinkTap>
       {launchTxHash ? (
@@ -887,7 +888,7 @@ function ClaimFees({
         <Tappable onPress={() => void Linking.openURL(explorer("tx", receipt.hash))} to={0.97}>
           <ClaimReceipt>
             tx {receipt.hash.slice(0, 10)}…{receipt.hash.slice(-8)} ·{" "}
-            {receipt.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · Arbiscan ↗
+            {receipt.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · {EXPLORER_NAME} ↗
           </ClaimReceipt>
         </Tappable>
       </ClaimBox>
@@ -952,7 +953,7 @@ function Graduate({ curve, onGraduated }: { curve: string; onGraduated: () => vo
         <Tappable onPress={() => void Linking.openURL(explorer("tx", receipt.hash))} to={0.97}>
           <ClaimReceipt>
             tx {receipt.hash.slice(0, 10)}…{receipt.hash.slice(-8)} ·{" "}
-            {receipt.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · Arbiscan ↗
+            {receipt.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · {EXPLORER_NAME} ↗
           </ClaimReceipt>
         </Tappable>
       ) : (
@@ -1053,7 +1054,7 @@ function NavBand({ nav, feed }: { nav: NavReference; feed: string | null }) {
 
       {feed ? (
         <LinkTap onPress={() => Linking.openURL(explorer("address", feed))}>
-          <LinkText>The {nav.symbol} feed on Arbiscan</LinkText>
+          <LinkText>The {nav.symbol} feed on {EXPLORER_NAME}</LinkText>
           <ExternalGlyph />
         </LinkTap>
       ) : null}

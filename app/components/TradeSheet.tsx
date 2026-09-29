@@ -6,7 +6,7 @@ import styled from "styled-components/native";
 import { Tappable } from "./Press";
 import { Button, Caption, Col, ExternalGlyph, Label, Row } from "./kit";
 import { juno, type Coin, type SwapBuild } from "../lib/api";
-import { describeTxError, explorer, NETWORK_NAME } from "../lib/chain";
+import { describeTxError, explorer, EXPLORER_NAME, NETWORK_NAME } from "../lib/chain";
 import { money, tokens } from "../lib/useApi";
 import { useWallet, type SendProgress } from "../lib/wallet";
 import { theme } from "../theme";
@@ -282,7 +282,7 @@ export function TradeSheet({
       try {
         const amounts = exactOut ? { amountOut: amountText } : { amountIn: amountText };
         const built = wallet.address
-          ? await juno.buildSwap({ curve: coin.pool, trader: wallet.address, side, ...amounts })
+          ? await juno.quoteForWallet({ curve: coin.pool, trader: wallet.address, side, ...amounts })
           : await juno.quoteSwap({ curve: coin.pool, side, ...amounts });
         if (!cancelled) {
           if ("refusal" in built) {
@@ -459,6 +459,9 @@ export function TradeSheet({
         // Null when the balance is unknown: a percentage of an unknown number
         // is not a number, and the pill is disabled rather than guessing.
         amount: balance === null ? null : balance * fraction,
+        // Never rounded up past what is held: a part rounds down, and 100% is
+        // the whole holding (the server takes float noise above it as "all").
+        text: balance === null ? null : fraction === 1 ? String(balance) : floorPrecision(balance * fraction),
       }));
     }
     if (exactOut) {
@@ -527,7 +530,7 @@ export function TradeSheet({
                 : ""}
             </Receipt>
             <LinkTap onPress={() => Linking.openURL(explorer("tx", txHash!))}>
-              <LinkText>View on Arbiscan</LinkText>
+              <LinkText>View on {EXPLORER_NAME}</LinkText>
               <ExternalGlyph />
             </LinkTap>
             <Button label="Done" onPress={onDone} style={{ marginTop: 16, alignSelf: "stretch" }} />
@@ -583,7 +586,7 @@ export function TradeSheet({
                   onPress={() =>
                     preset.amount === null
                       ? undefined
-                      : setAmount(trimTrailingZeros(preset.amount))
+                      : setAmount(("text" in preset && preset.text) || trimTrailingZeros(preset.amount))
                   }
                 >
                   <QuickLabel $off={preset.amount === null}>{preset.label}</QuickLabel>
@@ -765,6 +768,13 @@ export function TradeSheet({
  */
 function trimTrailingZeros(value: number): string {
   return String(Number(value.toPrecision(6)));
+}
+
+/** Six significant figures, rounded down: a share of a holding never exceeds it. */
+function floorPrecision(value: number): string {
+  if (!(value > 0)) return "0";
+  const step = 10 ** (Math.floor(Math.log10(value)) - 5);
+  return String(Number((Math.floor(value / step) * step).toPrecision(6)));
 }
 
 /** "Approve USDC ✓ → Buy …", live while the wallet works through the steps. */

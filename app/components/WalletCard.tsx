@@ -5,7 +5,7 @@ import { Linking, StyleSheet, Text, TextInput, View } from "react-native";
 import { Tappable } from "./Press";
 import { Button } from "./kit";
 import { api, FaucetLimited, juno } from "../lib/api";
-import { displayAddress, explorer, IS_TESTNET, NETWORK_NAME } from "../lib/chain";
+import { displayAddress, explorer, EXPLORER_NAME, IS_TESTNET, NETWORK_NAME } from "../lib/chain";
 import { rememberName, useName } from "../lib/names";
 import { useWallet } from "../lib/wallet";
 import { useApi } from "../lib/useApi";
@@ -125,7 +125,7 @@ export function WalletCard({ address }: { address: string }) {
           {message.text}
           {message.url ? (
             <Text style={styles.link} onPress={() => void Linking.openURL(message.url!)}>
-              {"  "}View on Arbiscan
+              {"  "}View on {EXPLORER_NAME}
             </Text>
           ) : null}
         </Text>

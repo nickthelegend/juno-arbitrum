@@ -279,6 +279,11 @@ export function Button({
       onPressOut={inactive ? undefined : onPressOut}
       accessibilityRole="button"
       accessibilityState={{ disabled: inactive, busy: loading }}
+      // The web build reads these, not accessibilityState: without them a
+      // disabled button announced itself as ready to press (Pressable writes
+      // aria-disabled from `disabled` alone).
+      disabled={inactive}
+      aria-busy={loading}
       $bg={fill.bg}
       $inactive={inactive}
       $tall={tall}

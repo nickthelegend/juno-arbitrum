@@ -23,18 +23,21 @@ async function probeVideo(path: string): Promise<{ width: number; height: number
     "error",
     "-select_streams",
     "v:0",
-    "-show_entries",
-    "stream=width,height:stream_side_data=rotation:format=duration",
+    // The whole stream and format, not a `-show_entries` selection: section
+    // names differ across ffprobe versions (4.x has no `stream_side_data`),
+    // and the rotation lives in side data on newer builds, a tag on older ones.
+    "-show_streams",
+    "-show_format",
     "-of",
     "json",
     path,
   ]);
   const parsed = JSON.parse(stdout) as {
-    streams?: Array<{ width?: number; height?: number; side_data_list?: Array<{ rotation?: number }> }>;
+    streams?: Array<{ width?: number; height?: number; side_data_list?: Array<{ rotation?: number }>; tags?: { rotate?: string } }>;
     format?: { duration?: string };
   };
   const stream = parsed.streams?.[0] ?? {};
-  const rotation = Math.abs(stream.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? 0);
+  const rotation = Math.abs(stream.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? Number(stream.tags?.rotate ?? 0));
   const rotated = rotation === 90 || rotation === 270;
   const width = stream.width ?? 0;
   const height = stream.height ?? 0;

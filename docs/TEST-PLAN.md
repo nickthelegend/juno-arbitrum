@@ -104,3 +104,69 @@ Reference data (on-chain, block ≥ 313703377):
 | F6 | Server suites | `vitest` unit all pass; `tsc` clean (server + app) |
 | F7 | Feed keeper | `feeds` workflow run succeeds and writes only on 0.5% / 4 h |
 | F8 | Index cron | `index` workflow with the secret → 200 |
+
+## Results: run of 29 Sep 2026
+
+Browsers: Claude in Chrome (A–E, re-verified after the fixes) and a
+Playwright Chromium run of the same pages while the Chrome host was down
+(`scripts/demo/e2e-ui.mjs`). API items are re-runnable with
+`scripts/e2e-api.ts` (36 checks); keyed on-chain items with `scripts/e2e-live.ts`.
+
+| ID | Status | Evidence / what was fixed |
+|---|---|---|
+| A1 | PASS | health 200, pg/mongo/rpc ok; faucet now reported `ok:false` with the address to fund (was `ok:true` at 0 ETH, fixed) |
+| A2 | PASS | 404 JSON |
+| A3 | PASS | CORS `*`; preflight now allows `authorization` (added with sessions) |
+| A4 | PASS | 401 without the secret; cron runs with it |
+| A5 | PASS | cursor status, 3 curves |
+| B1 | PASS | 3 coins = 3 `Launched`; prices = `currentPrice()` |
+| B2 | PASS | activity = `Trade` events; holder balance = `balanceOf`; Arbiscan links right |
+| B3 | PASS | 400 / 404 |
+| B4 | PASS | trades = `Trade` events, posts = stored posts, newest first (the first check wrongly expected trades only) |
+| B5 | PASS | price, updatedAt, age = the feed's round |
+| B6 | FAIL → PASS | the ladder quoted sizes the contract refuses; points now carry `allowed` (the curve's `bandOk && marketOpen`) and the chart marks them ("From about $9.39k the contract refuses the buy") |
+| B7 | PASS | trades = `Trade` events |
+| B8 | PASS | positions = `balanceOf` |
+| B9 | PASS | = `cast balance` / USDC `balanceOf` |
+| B10 | PASS | |
+| B11 | FAIL → PASS | batch lookups dropped bad addresses silently; now 400 (`addressList`) |
+| B12 | FAIL → PASS | a pinned PNG streams byte-exact; error responses lacked CORS (fixed) |
+| B13 | PASS | |
+| C1 | FAIL → PASS | refused by a flat 0.0005 ETH reserve (50× real gas); builders now check value + estimated gas at max fee; app blocker removed |
+| C2 | FAIL → PASS | same fix |
+| C3 | PASS | approve + `buyWithQuote` for a wallet with USDC and no allowance (keeper mint); single step with allowance |
+| C4 | PASS | visitor quote; refusal is `200 {refusal}` for visitors (no console error), 400 for signed-in builds |
+| C5 | PASS | 403 non-creator; creator gets a claim step |
+| C6 | PASS | graduated / not full |
+| C7 | PASS | `factory.launch` calldata decoded (built for a funded address; the deployer is correctly refused for want of ~0.0003 ETH) |
+| C8 | PASS | real trade recorded, idempotent; non-Juno tx records nothing; bad hash 400 |
+| C9 | PASS | real buys: 0xa3b687f0…, 0x3e19f817… |
+| C10 | PASS | real sells: 0xeeae574b…, 0xf766dffe… |
+| D1 | FAIL → PASS | wrong signer was 400, now 401 `BadSignature`; `juno_team` shows in the feed, coin and trader pages |
+| D2–D7 | FAIL → PASS | **any caller could write as any wallet** (likes, comments, follows, watchlist, plans, posts). Wallet sessions added (EIP-191 once → 7-day HMAC token); spoof → 403, anonymous → 401; verified in Chrome with a browser-generated wallet |
+| D8 | FAIL → PASS | **uploads had never worked in production** (ffmpeg/sharp shipped for macOS); linux-arm64 binaries now shipped, ffmpeg lazy; uploads and pins now require a session |
+| E1 | PASS | |
+| E2 | PASS | names resolve after `/profiles` |
+| E3 | PASS | empty state |
+| E4 | FAIL → PASS | the app called Sepolia's mirrored feeds plain "Chainlink"; now "Chainlink, mirrored" with the disclosure |
+| E5, E6 | PASS | |
+| E7 | PASS | activity, holders, comments (the signed test comment appeared under its claimed name), details |
+| E8 | FAIL → PASS | visitors got no quote (fixed: `quoteOnly`); $500 quote and $9,500 refusal both shown |
+| E9 | FAIL → PASS | opened a non-existent Uniswap page for Sepolia; now the pool on Arbiscan |
+| E10 | PASS | |
+| E11, E12 | PASS | |
+| E13 | FAIL → PASS | a malformed address hit the API (two 400s in the console); now answered locally. An unknown address gets the API's correct 404 |
+| E14 | PASS (app) | zero console errors and zero failed requests from the app on every page. Removed: Coinbase/Base SDK self-probes (aborted HEADs on every page), the visitor-quote 400. Remaining, all Privy's: its embedded-wallet frame is refused on this origin (+ its CSP report and a 403 from Privy analytics) until the origin is allowed in the Privy dashboard |
+| E15 | UNTESTED | needs the web origin allowed in Privy, and an email inbox for the one-time code |
+| F1 | PASS | 9 contracts exact-match on Sourcify |
+| F2 | PASS | stylus-match MATCH locally and in CI |
+| F3 | PASS | `eth_call` reverts `OutsideBand(361778572, 357535000, 100)` |
+| F4 | PASS | `test_staleFeedBlocksBuysNotSells` on the Arbitrum One fork |
+| F5 | PASS | forge 31/31, cargo 9/9 |
+| F6 | PASS | vitest 143/143; tsc clean (server, app, scripts) |
+| F7 | PASS | feeds workflow success |
+| F8 | PASS | index cron success on schedule |
+
+Test data written to production during the run (the browser test wallet's 3
+posts, 1 comment and name) was deleted afterwards; the scripted runs undo
+their own writes.

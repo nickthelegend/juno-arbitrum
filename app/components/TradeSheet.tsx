@@ -280,15 +280,18 @@ export function TradeSheet({
 
     const timer = setTimeout(async () => {
       try {
-        const built = await juno.buildSwap({
-          curve: coin.pool,
-          ...(wallet.address ? { trader: wallet.address } : { quoteOnly: true }),
-          side,
-          ...(exactOut ? { amountOut: amountText } : { amountIn: amountText }),
-        });
+        const amounts = exactOut ? { amountOut: amountText } : { amountIn: amountText };
+        const built = wallet.address
+          ? await juno.buildSwap({ curve: coin.pool, trader: wallet.address, side, ...amounts })
+          : await juno.quoteSwap({ curve: coin.pool, side, ...amounts });
         if (!cancelled) {
-          setQuote(built);
-          quotedAt.current = Date.now();
+          if ("refusal" in built) {
+            setQuote(null);
+            setError(built.refusal.message);
+          } else {
+            setQuote(built);
+            quotedAt.current = Date.now();
+          }
         }
       } catch (caught) {
         if (!cancelled) {

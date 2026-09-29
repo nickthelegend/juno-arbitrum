@@ -45,6 +45,10 @@ export function PrivyRoot({ children }: { children: React.ReactNode }) {
           accentColor: "#12150E",
           walletChainType: "ethereum-only",
           showWalletLoginFirst: false,
+          // Browser wallets, and WalletConnect for phones. Coinbase's and Base's
+          // SDKs are left out: on every page load they probe this origin
+          // (a HEAD request each, for their popup check) before anyone signs in.
+          walletList: ["detected_ethereum_wallets", "metamask", "rabby_wallet", "rainbow", "wallet_connect"],
         },
         embeddedWallets: {
           ethereum: { createOnLogin: "users-without-wallets" },

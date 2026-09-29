@@ -13,7 +13,9 @@ export const OPTIONS = junoOptions;
  * `POST { chainId, curve, trader, side, amountIn?, amountOut?, slippageBps?, quoteOnly? }`
  * (`curve` may also be the token, as `curve`, `token` or `mint`; `trader` may be `owner`).
  * `quoteOnly: true` returns the quote with no steps and no balance checks, and
- * needs no `trader`: what a visitor sees before signing in.
+ * needs no `trader`: what a visitor sees before signing in. A quote the curve
+ * refuses (the band, a closed market, sold out) is still an answer there:
+ * `200 { quote: null, steps: [], refusal: { message, reason } }`.
  *
  * The curve is looked up in Juno's own index rather than trusted from the
  * caller, so this server never builds a transaction against an arbitrary
@@ -38,18 +40,26 @@ export async function POST(request: Request) {
     const row = await getCurve(address, chainId);
     if (!row) throw new CallerError("Coin not found", 404);
 
-    const build = await retryWhenBusy(() =>
-      buildSwap({
-        chainId,
-        row,
-        trader,
-        side,
-        amountIn: body.amountIn,
-        amountOut: body.amountOut,
-        slippageBps: body.slippageBps,
-        quoteOnly,
-      }),
-    );
-    return junoJson(build);
+    try {
+      const build = await retryWhenBusy(() =>
+        buildSwap({
+          chainId,
+          row,
+          trader,
+          side,
+          amountIn: body.amountIn,
+          amountOut: body.amountOut,
+          slippageBps: body.slippageBps,
+          quoteOnly,
+        }),
+      );
+      return junoJson(build);
+    } catch (error) {
+      if (quoteOnly && error instanceof CallerError && error.status === 400) {
+        const reason = typeof error.extra.reason === "string" ? error.extra.reason : null;
+        return junoJson({ chainId, quote: null, steps: [], refusal: { message: error.message, reason } });
+      }
+      throw error;
+    }
   });
 }

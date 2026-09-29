@@ -72,10 +72,14 @@ export function explorer(kind: "tx" | "address" | "token", id: string, chainId =
   return `${base}/${kind}/${id}`;
 }
 
-/** The graduated market, on Uniswap's own explorer. */
+/**
+ * Where a graduated market trades. Uniswap's app lists Arbitrum One pools; it
+ * has no Arbitrum Sepolia pages, so there the pool's explorer page stands in
+ * (the same rule as the server's `graduatedUrl`).
+ */
 export function uniswapPoolUrl(pool: string, chainId = CHAIN_ID): string {
-  const network = chainId === arbitrum.id ? "arbitrum" : "arbitrum_sepolia";
-  return `https://app.uniswap.org/explore/pools/${network}/${pool}`;
+  if (chainId === arbitrum.id) return `https://app.uniswap.org/explore/pools/arbitrum/${pool}`;
+  return explorer("address", pool, chainId);
 }
 
 export function validAddress(value: string | null | undefined): value is `0x${string}` {

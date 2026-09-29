@@ -37,7 +37,7 @@ import {
   Stat,
   Title,
 } from "../../components/kit";
-import { juno, type NavReference, type Plan } from "../../lib/api";
+import { ApiError, juno, type NavReference, type Plan } from "../../lib/api";
 import {
   describeTxError,
   displayAddress,
@@ -48,6 +48,7 @@ import {
   sameAddress,
   shortAddress,
   uniswapPoolUrl,
+  validAddress,
 } from "../../lib/chain";
 import { age, money, since, tokens, useApi } from "../../lib/useApi";
 import { shareCoin } from "../../lib/social";
@@ -119,12 +120,16 @@ export default function CoinScreen() {
   const [contributing, setContributing] = useState<Omit<Plan, "coin"> | null>(null);
 
   const wallet = useWallet();
-  const detail = useApi(() => juno.coin(mint), [mint]);
+  // A link that is not an address is answered here, as the server would
+  // answer it (400 → "No such coin"), without asking the server.
+  const wellFormed = validAddress(mint);
+  const notAnAddress = () => Promise.reject(new ApiError("That is not an address.", 400));
+  const detail = useApi(() => (wellFormed ? juno.coin(mint) : notAnAddress()), [mint]);
   const coin = detail.data?.coin;
 
   // Only for the count on the tab — the sheet reads its own list when opened,
   // because a list fetched on mount is stale by the time anyone looks at it.
-  const comments = useApi(() => juno.comments(mint), [mint]);
+  const comments = useApi(() => (wellFormed ? juno.comments(mint) : notAnAddress()), [mint]);
 
   /*
    * What this wallet holds: the coin, for the sell side; ETH and USDC, for the

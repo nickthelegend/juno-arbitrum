@@ -480,6 +480,9 @@ export type SwapBuild = TxBuild<SwapQuote> & {
   symbol?: string;
 };
 
+/** A visitor's quote (`quoteOnly`) the curve refused: the band, a closed market, sold out. */
+export type QuoteRefusal = { quote: null; steps: []; refusal: { message: string; reason: string | null } };
+
 /** The launch presets the app offers. `tight-nav` is for trackers, which scripts launch. */
 export type LaunchPreset = "content" | "thin-name" | "ipo-book";
 
@@ -925,11 +928,8 @@ export const juno = {
   buildSwap: (
     input: {
       curve: string;
-      /** Omitted with `quoteOnly`: a visitor's quote, nothing to sign. */
-      trader?: string;
+      trader: string;
       side: "buy" | "sell";
-      /** Quote only: no balance checks and no steps (the server says why a trade would fail). */
-      quoteOnly?: boolean;
       /** What to spend. */
       amountIn?: string;
       /** Or, on a buy, exactly how many tokens to receive. */
@@ -939,6 +939,13 @@ export const juno = {
     /** Shorter than the default when the caller has a usable quote to fall back on. */
     timeoutMs?: number,
   ) => api.post<SwapBuild>("/api/juno/tx/swap", { chainId: CHAIN_ID, ...input }, timeoutMs),
+
+  /**
+   * A visitor's quote: no wallet, nothing to sign. A refusal is an answer
+   * (200), so it comes back as `refusal` rather than as an error.
+   */
+  quoteSwap: (input: { curve: string; side: "buy" | "sell"; amountIn?: string; amountOut?: string }) =>
+    api.post<SwapBuild | QuoteRefusal>("/api/juno/tx/swap", { chainId: CHAIN_ID, ...input, quoteOnly: true }),
 
   buildLaunch: (input: {
     creator: string;

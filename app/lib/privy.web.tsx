@@ -24,8 +24,15 @@ import type { PrivyBridge, TxRequest } from "./privy.types";
  */
 
 export const APP_ID = process.env.EXPO_PUBLIC_PRIVY_APP_ID ?? "cmuh8o5on014v0cjmdk6w1l0q";
-export const CLIENT_ID =
-  process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID ?? "client-WY6dy4WiB1bozhetK8yhaZh1mu4kQNUhF8a8SmV7xoJWN";
+/**
+ * The web app runs on the app's default client, whose allowed origins are the
+ * app's own (the web domain is allowed there). The mobile client
+ * (`EXPO_PUBLIC_PRIVY_CLIENT_ID`) has its own allowlist without the web
+ * origin, and Privy refuses to frame its wallet for a client that does not
+ * allow the page. A dedicated web client can be set with
+ * `EXPO_PUBLIC_PRIVY_WEB_CLIENT_ID`.
+ */
+export const CLIENT_ID: string | undefined = process.env.EXPO_PUBLIC_PRIVY_WEB_CLIENT_ID || undefined;
 
 export const PRIVY_ENABLED = true;
 
@@ -35,7 +42,7 @@ export function PrivyRoot({ children }: { children: React.ReactNode }) {
   return (
     <PrivyProvider
       appId={APP_ID}
-      clientId={CLIENT_ID}
+      {...(CLIENT_ID ? { clientId: CLIENT_ID } : {})}
       config={{
         loginMethods: ["email", "wallet"],
         defaultChain: CHAIN,

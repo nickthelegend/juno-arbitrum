@@ -73,12 +73,26 @@ async function save(wallet: string, stored: Stored | null): Promise<void> {
   }
 }
 
+/**
+ * The signer for `wallet`, waiting briefly: a write made straight after
+ * sign-in (the like that asked for it) runs before the wallet provider has
+ * re-rendered and registered the new wallet's signer.
+ */
+async function signerFor(wallet: string, waitMs = 5_000): Promise<Signer | null> {
+  const until = Date.now() + waitMs;
+  while (!(signer && signer.wallet === wallet) && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return signer && signer.wallet === wallet ? signer : null;
+}
+
 async function open(wallet: string): Promise<Stored> {
-  if (!signer || signer.wallet !== wallet) {
+  const current = await signerFor(wallet);
+  if (!current) {
     throw new ApiError("Sign in with this wallet first.", 401, { reason: "NoSession" });
   }
   const issuedAt = new Date().toISOString();
-  const signature = await signer.sign(sessionMessage(wallet, issuedAt));
+  const signature = await current.sign(sessionMessage(wallet, issuedAt));
   const response = await fetch(`${API_URL}/api/juno/session`, {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
@@ -99,7 +113,7 @@ async function open(wallet: string): Promise<Stored> {
  * share the one signature.
  */
 export async function sessionHeaders(walletInput?: string): Promise<Record<string, string>> {
-  const wallet = (walletInput ?? signer?.wallet ?? "").toLowerCase();
+  const wallet = (walletInput ?? signer?.wallet ?? (await signerAny())?.wallet ?? "").toLowerCase();
   if (!wallet) throw new ApiError("Sign in to do this.", 401, { reason: "NoSession" });
   const cached = await load(wallet);
   if (cached && cached.expiresAt > Date.now() + 60_000) return { authorization: `Bearer ${cached.token}` };
@@ -110,6 +124,13 @@ export async function sessionHeaders(walletInput?: string): Promise<Record<strin
   }
   const stored = await inflight;
   return { authorization: `Bearer ${stored.token}` };
+}
+
+/** Any registered signer, waiting briefly (an upload straight after sign-in names no wallet). */
+async function signerAny(waitMs = 5_000): Promise<Signer | null> {
+  const until = Date.now() + waitMs;
+  while (!signer && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 100));
+  return signer;
 }
 
 /** Drop a session the server refused, so the next write signs a fresh one. */

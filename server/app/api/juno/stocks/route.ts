@@ -2,6 +2,7 @@ import { junoError, junoJson, junoOptions, junoRead } from "@/lib/juno/api";
 import { hydrateCurves } from "@/lib/juno/chain";
 import { chainIdFromUrl, chainName, deployment, stockFeeds } from "@/lib/juno/chains";
 import { stockReferences } from "@/lib/juno/chainlink";
+import { mirrorFeedsAfter } from "@/lib/juno/mirror-feeds";
 import { listCurves } from "@/lib/juno/registry";
 import type { Coin } from "@/lib/juno/types";
 
@@ -29,6 +30,7 @@ export async function GET(request: Request) {
     }
 
     const references = await stockReferences(chainId);
+    mirrorFeedsAfter(chainId);
     let trackers: Coin[] = [];
     if (deployment(chainId)) {
       const rows = await listCurves(chainId, 100, { listedOnly: true, trackers: true });

@@ -554,6 +554,7 @@ export function Tabs<T extends string>({
           $on={item.id === value}
           onPress={() => onChange(item.id)}
           accessibilityRole="tab"
+          accessibilityLabel={item.label}
           accessibilityState={{ selected: item.id === value }}
         >
           <TabLabel $on={item.id === value}>{item.label}</TabLabel>
@@ -599,6 +600,7 @@ export function Segmented<T extends string>({
           $on={item.id === value}
           onPress={() => onChange(item.id)}
           accessibilityRole="tab"
+          accessibilityLabel={item.label}
           accessibilityState={{ selected: item.id === value }}
         >
           <SegLabel $on={item.id === value}>{item.label}</SegLabel>

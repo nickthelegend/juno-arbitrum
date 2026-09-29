@@ -12,11 +12,15 @@ export const dynamic = "force-dynamic";
 export const OPTIONS = junoOptions;
 
 /** One post, its replies, and the coin it is about (priced; the post survives a failed price read). */
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return junoHandler(async () => {
     const { id } = await params;
     const post = await getPost(id);
-    if (!post) return junoError("Post not found", 404);
+    // `?lookup=1` (the app's post page asking whether one exists): "no such
+    // post" is an answer, not a 404.
+    if (!post) {
+      return new URL(request.url).searchParams.get("lookup") === "1" ? junoJson({ notFound: true }) : junoError("Post not found", 404);
+    }
     const chainId = post.chainId as ChainId;
 
     const replies = await listPosts(chainId, { parentId: id, limit: 100 });

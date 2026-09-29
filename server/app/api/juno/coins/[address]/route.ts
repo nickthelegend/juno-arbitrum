@@ -4,6 +4,7 @@ import { curveActivity, curveSwaps, holderBook, hydrateCurve } from "@/lib/juno/
 import { chainIdFromUrl, explorer, requireDeployment, type ChainId } from "@/lib/juno/chains";
 import { crowdFromSwaps } from "@/lib/juno/crowd";
 import { readCursor } from "@/lib/juno/indexer";
+import { mirrorFeedsAfter } from "@/lib/juno/mirror-feeds";
 import { getCurve } from "@/lib/juno/registry";
 
 export const runtime = "nodejs";
@@ -13,6 +14,8 @@ export const OPTIONS = junoOptions;
 /**
  * One coin, fully hydrated: price, curve, fee schedule, tracker band, chart
  * series, activity, holders and crowd. `[address]` is the token (or the curve).
+ * An address that is not a Juno coin is 404 — or, with `?lookup=1` (the app's
+ * coin page, which is asking whether one exists), `200 { notFound: true }`.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ address: string }> }) {
   return junoRead(async () => {
@@ -23,8 +26,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ addr
     requireDeployment(chainId);
 
     const row = await getCurve(address, chainId);
-    if (!row) return junoError("Coin not found", 404);
+    if (!row) {
+      return url.searchParams.get("lookup") === "1"
+        ? junoJson({ chainId, notFound: true })
+        : junoError("Coin not found", 404);
+    }
 
+    if (row.feed) mirrorFeedsAfter(chainId);
     const coin = await hydrateCurve(row, { detailed: true });
     if (!coin) return junoError("The curve could not be read right now. Try again.", 503);
 

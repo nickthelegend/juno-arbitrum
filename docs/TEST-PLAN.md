@@ -92,6 +92,21 @@ Reference data (on-chain, block ≥ 313703377):
 | E14 | Console + network | zero console errors and zero failed requests on E1–E13 |
 | E15 | Sign in with email (Privy) | sheet opens; OTP → wallet created → Profile shows the address |
 
+## G. Added in the second run (flows the first plan missed)
+
+| ID | Item | Expected |
+|---|---|---|
+| G1 | Post detail `/post/{id}` | an existing post renders its body, author and time; an unknown id shows a not-found state (no crash, no console error) |
+| G2 | Signed-out Follow | tapping Follow on a feed card opens the sign-in sheet; no request is sent |
+| G3 | Signed-out "Sign in to trade" | tapping it in the buy sheet opens the sign-in sheet |
+| G4 | Chart ranges | 1H / 1D / 1W / 1M / All each render (a line or the "not enough trades" note) with no console error |
+| G5 | Copy address | copies the token address exactly (clipboard = the coin's address) |
+| G6 | Leaderboard → trader | tapping the leaderboard row opens `/trader/{wallet}` for that wallet |
+| G7 | Exact-out buy builder | `tx/swap` with `amountOut` builds `buyExactOut(tokensOut, maxIn, deadline)` with value = maxIn = quote × (1 + slippage) |
+| G8 | Visitor sell quote | `quoteOnly` sell returns the proceeds; selling more than the curve has sold → refusal |
+| G9 | Sell-side depth | `depth?side=sell` points equal `quoteSell` for those sizes |
+| G10 | Sign-in sheet opens Privy | "Sign in" opens the email step; Privy's frame loads on this origin with no CSP/403 errors |
+
 ## F. Contracts and operations
 
 | ID | Item | Expected |
@@ -170,3 +185,30 @@ Playwright Chromium run of the same pages while the Chrome host was down
 Test data written to production during the run (the browser test wallet's 3
 posts, 1 comment and name) was deleted afterwards; the scripted runs undo
 their own writes.
+
+## Results: second run, 29 Sep 2026 (US market hours)
+
+Everything above was re-run from the top (API battery 36/36, all 15 pages
+clean, keyed on-chain checks incl. a third real buy and sell, contract suites),
+plus the G items. Fixes made in this run:
+
+| ID | Status | Evidence / what was fixed |
+|---|---|---|
+| E14 / G10 | FAIL → PASS | Privy still refused its wallet frame after the origin was allowed: the web build passed the **mobile** app client id, whose allowlist lacks the web origin. The web build now uses the app's default client (`EXPO_PUBLIC_PRIVY_WEB_CLIENT_ID` to override). Every page: zero Privy errors; the sign-in sheet reaches the email step |
+| E13 | FAIL → PASS | the unknown-coin page logged the API's 404; the app now asks `?lookup=1` and gets `200 {notFound:true}` (default API stays 404) |
+| G1 | FAIL → PASS | a real post renders from Postgres; an unknown post id logged a 404 — same lookup fix |
+| G2 | FAIL → PASS | signed-out Follow (and the heart) switched to "Following"/liked before anyone signed in; the optimistic update now waits for the wallet. Also: a write made straight after sign-in could fail before the session signer registered — it now waits for it |
+| G3 | PASS | "Sign in to trade" opens the sign-in sheet |
+| G4 | PASS (fix: a11y) | ranges switch (past hour/day/week/month/all time); the range and tab buttons had no accessible names — labelled |
+| G5 | PASS | clipboard = the token address; "Copied" |
+| G6 | PASS | leaderboard row → `/trader/0x39d7…53b9` |
+| G7 | PASS | `buyExactOut(1000e18, maxIn, deadline)`, value = maxIn = quote × 1.01 |
+| G8 | PASS | visitor sell quote = `quoteSell`; over-sell → refusal |
+| G9 | PASS | sell-side depth = `quoteSell` |
+| F7 | FAIL → PASS | GitHub's scheduler did not run the feed keeper for a whole trading morning: the Sepolia mirrors were 21 h old (5 h from reading "market closed"). The API now mirrors the real Arbitrum One feeds on read (`lib/juno/mirror-feeds.ts`, keeper key on Vercel, 3 unit tests); the cron stays as a backstop |
+
+Note on the browser: Claude in Chrome's element clicks did not always reach
+React Native Web's pressables (range pills, Buy); the same buttons respond to
+real mouse input in Google Chrome (Playwright, `channel: "chrome"`, raw mouse
+down/up), which is how G3/G4/G6 were confirmed. Page content, console and
+network for every item were read through Claude in Chrome.

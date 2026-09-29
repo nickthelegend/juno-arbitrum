@@ -732,7 +732,11 @@ export const juno = {
       crowd: Crowd | null;
       /** The launch transaction's hash. */
       launchTxHash?: string | null;
-    }>(`/api/juno/coins/${token.toLowerCase()}`),
+    }>(`/api/juno/coins/${token.toLowerCase()}?lookup=1`).then((body) => {
+      // A lookup: the server answers "no such coin" as data, not as a 404.
+      if ((body as { notFound?: boolean }).notFound) throw new ApiError("Coin not found", 404);
+      return body;
+    }),
 
   portfolio: (wallet: string) => api.get<Portfolio>(`/api/juno/portfolio/${wallet}`),
 
@@ -818,7 +822,10 @@ export const juno = {
         progress: number;
         graduated: boolean;
       } | null;
-    }>(`/api/juno/posts/${id}`),
+    }>(`/api/juno/posts/${id}?lookup=1`).then((body) => {
+      if ((body as { notFound?: boolean }).notFound) throw new ApiError("Post not found", 404);
+      return body;
+    }),
 
   /**
    * Pin a photo or video to IPFS. A video comes back with a poster frame.

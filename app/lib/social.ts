@@ -34,10 +34,12 @@ export function useLike(coin: Pick<Coin, "address" | "likes" | "viewerLiked">) {
       if (inFlight.current) return;
       inFlight.current = true;
       const before = { liked, likes };
-      setLiked(next);
-      setLikes((n) => (n === null ? (next ? 1 : null) : Math.max(0, n + (next ? 1 : -1))));
       try {
+        // Signed out, the heart waits for the sign-in: showing it filled while
+        // the sheet is open would be a like that has not happened.
         const address = wallet.address ?? (await wallet.connect());
+        setLiked(next);
+        setLikes((n) => (n === null ? (next ? 1 : null) : Math.max(0, n + (next ? 1 : -1))));
         const result = await juno.setLike({ coin: coin.address, wallet: address, like: next });
         setLikes(result.likes);
         setLiked(result.liked);
@@ -129,9 +131,10 @@ export function useFollow(target: string) {
     if (busy || self) return;
     setBusy(true);
     const next = !following;
-    announceFollow(target, next);
     try {
+      // Signed out, "Following" waits for the sign-in, like the heart does.
       const address = wallet.address ?? (await wallet.connect());
+      announceFollow(target, next);
       const result = await juno.setFollow(address, target, next);
       setFollowing(result.isFollowing);
       followReads.set(`${address}>${target}`, { at: Date.now(), value: Promise.resolve(result.isFollowing) });

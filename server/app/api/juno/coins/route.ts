@@ -1,4 +1,5 @@
 import { catchUpAfter } from "@/lib/juno/catch-up";
+import { mirrorFeedsAfter } from "@/lib/juno/mirror-feeds";
 import { maybeAddress } from "@/lib/juno/address";
 import { junoJson, junoOptions, junoRead } from "@/lib/juno/api";
 import { hydrateCurves } from "@/lib/juno/chain";
@@ -23,6 +24,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const chainId = chainIdFromUrl(url);
     catchUpAfter(chainId);
+    mirrorFeedsAfter(chainId);
     requireDeployment(chainId);
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 40) || 40, 100);
     const kind = url.searchParams.get("kind");

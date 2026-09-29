@@ -115,10 +115,11 @@ export default function TraderScreen() {
     const before = { follows, followers };
     setSaving(true);
     setFollowError(null);
-    setFollows(next);
-    setFollowers((count) => (count === null ? count : Math.max(0, count + (next ? 1 : -1))));
     try {
+      // Signed out, the button waits for the sign-in before it moves.
       const address = me.address ?? (await me.connect());
+      setFollows(next);
+      setFollowers((count) => (count === null ? count : Math.max(0, count + (next ? 1 : -1))));
       const result = await juno.setFollow(address, target, next);
       // The server's count is authoritative — it has seen every other follow.
       setFollowers(result.followers);

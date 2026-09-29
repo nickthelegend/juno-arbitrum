@@ -272,6 +272,7 @@ export function PriceLine({
             $on={option.id === span}
             onPress={() => setSpan(option.id)}
             accessibilityRole="button"
+            accessibilityLabel={`Price over ${WINDOW_WORDS[option.id] === "all time" ? "all time" : `the ${WINDOW_WORDS[option.id]}`}`}
             accessibilityState={{ selected: option.id === span }}
           >
             <SpanText $on={option.id === span}>{option.label}</SpanText>

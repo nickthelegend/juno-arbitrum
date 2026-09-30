@@ -78,7 +78,9 @@ export function SignInSheet({
       <Sheet>
         <Title>{creating ? "Creating your wallet" : "Sign in to Juno"}</Title>
         <Body muted>
-          {creating
+          {privy.emailLogin === false
+            ? "Connect the wallet you already use in this browser. Juno never holds your keys."
+            : creating
             ? `Privy is making an Arbitrum wallet for this account.`
             : step === "email"
               ? "Privy creates an Arbitrum wallet for you. No seed phrase, nothing to install."

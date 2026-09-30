@@ -51,7 +51,7 @@ import {
   uniswapPoolUrl,
   validAddress,
 } from "../../lib/chain";
-import { age, money, since, tokens, useApi } from "../../lib/useApi";
+import { age, insideBand, money, since, tokens, useApi } from "../../lib/useApi";
 import { shareCoin } from "../../lib/social";
 import { useWallet } from "../../lib/wallet";
 import { theme } from "../../theme";
@@ -1012,7 +1012,7 @@ function DetailRow({
 function NavBand({ nav, feed }: { nav: NavReference; feed: string | null }) {
   const band = nav.bandBps / 100;
   const deviation = nav.deviationPct;
-  const inside = deviation === null ? null : Math.abs(deviation) <= band;
+  const inside = deviation === null ? null : insideBand(deviation, band);
 
   return (
     <Card style={{ marginTop: 14 }}>

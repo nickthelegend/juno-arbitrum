@@ -75,7 +75,7 @@ export const ADDRESSES: Record<number, ChainAddresses> = {
   // Uniswap's published artifacts, the Stylus CurveMath and Juno, and writes
   // the addresses here. Its explorer is the local API's read-only explorer.
   412346: {
-    factoryBlock: 9,
+    factoryBlock: 10,
     multicall3: "0xc4db17cb5928d8a4e06625f40644dab8f12c7022",
     name: "Arbitrum Local",
     explorer: "http://localhost:3111/api/explorer",

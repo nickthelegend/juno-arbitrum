@@ -6,7 +6,7 @@
 # TestUSDC, MockAggregators seeded from the real Arbitrum One feeds), then
 # write every address into config/addresses.ts under 412346.
 #
-#   bash scripts/localnet/up.sh          # idempotent: re-running redeploys Juno
+#   bash scripts/localnet/up.sh          # start (or restore after a reboot); deploys only if needed
 #   bash scripts/localnet/up.sh --fresh  # a new chain and empty local databases
 #
 # The node runs in archive mode so every block's state is written to disk: in
@@ -23,24 +23,45 @@ PORT="${RPC##*:}"
 # Nitro --dev's prefunded account: a published key that only exists on local dev chains.
 DEV_KEY=0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
 
+# The three containers, published on 127.0.0.1 only: the node has the debug
+# API on and funded public dev keys, Mongo has no auth, Postgres a toy password.
 if [ "$FRESH" = 1 ]; then
-  # Only ever the local stack: the containers this script and the README start.
-  docker rm -f juno-nitro >/dev/null 2>&1 || true
-  docker exec juno-pg psql -q -U juno -d postgres -c 'DROP DATABASE IF EXISTS juno_local' -c 'CREATE DATABASE juno_local'
-  docker exec juno-mongo mongosh --quiet juno_local --eval 'db.dropDatabase()' >/dev/null
+  docker rm -f juno-nitro juno-pg juno-mongo >/dev/null 2>&1 || true
+fi
+if ! docker inspect juno-pg >/dev/null 2>&1; then
+  docker run -d --name juno-pg -p 127.0.0.1:55442:5432 -e POSTGRES_USER=juno -e POSTGRES_PASSWORD=juno -e POSTGRES_DB=juno_local postgres:16 >/dev/null
+  NEW_DB=1
+fi
+if ! docker inspect juno-mongo >/dev/null 2>&1; then
+  docker run -d --name juno-mongo -p 127.0.0.1:27027:27017 mongo:7 >/dev/null
+  NEW_DB=1
+fi
+docker start juno-pg juno-mongo >/dev/null
+if [ "${NEW_DB:-0}" = 1 ]; then
+  for _ in $(seq 1 30); do docker exec juno-pg pg_isready -U juno -d juno_local >/dev/null 2>&1 && break; sleep 1; done
+  for _ in $(seq 1 30); do docker exec juno-mongo mongosh --quiet --eval 'db.runCommand({ping:1}).ok' >/dev/null 2>&1 && break; sleep 1; done
   (cd "$ROOT/server" && npx tsx --env-file=.env.localnet scripts/migrate.ts >/dev/null && npx tsx --env-file=.env.localnet scripts/mongo-indexes.ts >/dev/null)
-  echo "local databases reset (juno_local on :55442 and :27027)"
+  echo "local databases created (Postgres 127.0.0.1:55442, Mongo 127.0.0.1:27027)"
 fi
 
 chain_id() { curl -s -m 3 -X POST "$RPC" -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' | grep -o '0x[0-9a-f]*' || true; }
+docker start juno-nitro >/dev/null 2>&1 || true
+for _ in $(seq 1 15); do [ "$(chain_id)" = "0x64aba" ] && break; sleep 2; done
 if [ "$(chain_id)" != "0x64aba" ]; then
   docker rm -f juno-nitro >/dev/null 2>&1 || true
-  docker run -d --name juno-nitro -p "$PORT:8547" offchainlabs/nitro-node:v3.7.1-926f1ab \
+  docker run -d --name juno-nitro -p "127.0.0.1:$PORT:8547" offchainlabs/nitro-node:v3.7.1-926f1ab \
     --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug --http.corsdomain='*' --http.vhosts='*' \
     --init.dev-max-code-size 49152 --execution.caching.archive >/dev/null
   for _ in $(seq 1 60); do [ "$(chain_id)" = "0x64aba" ] && break; sleep 2; done
 fi
 [ "$(chain_id)" = "0x64aba" ] || { echo "the Nitro dev node did not come up on $RPC"; exit 1; }
+# A node killed hard (SIGKILL, power loss) can keep its blocks but not its
+# sequencer position, and then refuses every transaction ("wrong msgIdx").
+if ! out=$(cast send "$(cast wallet address "$DEV_KEY")" --value 0 --private-key "$DEV_KEY" --rpc-url "$RPC" 2>&1); then
+  echo "the node refuses transactions: ${out##*error}"
+  echo "its state is inconsistent after a hard stop; start over with: bash scripts/localnet/up.sh --fresh"
+  exit 1
+fi
 echo "Nitro dev node on $RPC (chain 412346)"
 
 for who in DEPLOYER FAUCET KEEPER; do
@@ -51,6 +72,14 @@ for who in DEPLOYER FAUCET KEEPER; do
   fi
   echo "  $who $addr: $(cast balance "$addr" --rpc-url "$RPC" --ether) ETH"
 done
+
+# Already deployed on this node (a restart, not a new chain): keep it. The
+# address book's factory is the one the API and the web build point at.
+BOOK_FACTORY=$(awk '/412346: \{/,/^  \},/' "$ROOT/config/addresses.ts" | grep -oE 'factory: "0x[0-9a-fA-F]{40}"' | grep -oE '0x[0-9a-fA-F]{40}' | head -1 || true)
+if [ "$FRESH" = 0 ] && [ "${REDEPLOY:-0}" = 0 ] && [ -n "$BOOK_FACTORY" ] && [ "$(cast code "$BOOK_FACTORY" --rpc-url "$RPC")" != "0x" ]; then
+  echo "Juno already on the local node: factory $BOOK_FACTORY (REDEPLOY=1 to deploy again)"
+  exit 0
+fi
 
 # WETH9 + Uniswap v3
 eval "$(cd "$ROOT/scripts" && npx tsx localnet/deploy-infra.ts)"

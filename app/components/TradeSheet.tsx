@@ -5,9 +5,11 @@ import styled from "styled-components/native";
 
 import { Tappable } from "./Press";
 import { Button, Caption, Col, ExternalGlyph, Label, Row } from "./kit";
+import { junoCurveAbi } from "@config/abi";
+import { formatUnits, parseEventLogs, type TransactionReceipt } from "viem";
 import { juno, type Coin, type SwapBuild } from "../lib/api";
 import { describeTxError, explorer, EXPLORER_NAME, NETWORK_NAME } from "../lib/chain";
-import { money, tokens } from "../lib/useApi";
+import { insideBand, money, tokens } from "../lib/useApi";
 import { useWallet, type SendProgress } from "../lib/wallet";
 import { theme } from "../theme";
 
@@ -142,6 +144,8 @@ export function TradeSheet({
   const [progress, setProgress] = useState<{ labels: string[]; at: SendProgress } | null>(null);
   /** When the chain confirmed it — shown beside the hash on the receipt. */
   const [landedAt, setLandedAt] = useState<Date | null>(null);
+  /** What the curve actually filled, from its Trade event: the receipt, not the quote. */
+  const [filled, setFilled] = useState<{ tokens: number; quote: number } | null>(null);
   const [note, setNote] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);
   /**
@@ -244,7 +248,7 @@ export function TradeSheet({
     const nav = coin.nav;
     if (!nav || nav.deviationPct === null) return null;
     const band = nav.bandBps / 100;
-    if (Math.abs(nav.deviationPct) <= band) return null;
+    if (insideBand(nav.deviationPct, band)) return null;
     const above = nav.deviationPct > 0;
     return `This curve is ${Math.abs(nav.deviationPct).toFixed(1)}% ${above ? "above" : "below"} ${nav.symbol}, outside its ${band}% band.${
       side === "sell" && !above ? " A sell here gets less than the stock." : ""
@@ -339,6 +343,7 @@ export function TradeSheet({
   const press = useCallback((key: string) => {
     setError(null);
     setTxHash(null);
+    setFilled(null);
     setAmount((current) => {
       if (key === "back") return current.slice(0, -1);
       if (key === ".") return current.includes(".") ? current : current === "" ? "0." : `${current}.`;
@@ -398,10 +403,12 @@ export function TradeSheet({
         onProgress: (at) => setProgress({ labels, at }),
       });
       const landed = sent.hashes[sent.hashes.length - 1]!;
+      const fill = tradeFilled(sent.receipts, coin.pool, address, coin.quote.decimals);
+      setFilled(fill);
       setTxHash(landed);
       setLandedAt(sent.confirmedAt);
       setStage("done");
-      onFilled?.(exactOut ? (live.quote.amountIn ?? value) : value);
+      onFilled?.(fill && side === "buy" ? fill.quote : exactOut ? (live.quote.amountIn ?? value) : value);
 
       // The announcement, if one was written. Its failure is reported on its
       // own line: the trade is already on chain and saying "the trade failed"
@@ -517,9 +524,13 @@ export function TradeSheet({
           <Done>
             <DoneTitle>Done</DoneTitle>
             <Label muted style={{ textAlign: "center" }}>
-              {side === "buy"
-                ? `Bought ${receiving ?? ""}`
-                : `Sold ${tokens(value)} ${coin.symbol} for ${receiving ?? ""}`}{" "}
+              {filled
+                ? side === "buy"
+                  ? `Bought ${tokens(filled.tokens)} ${coin.symbol} for ${money(filled.quote, coin.quote.symbol, { compact: false })}`
+                  : `Sold ${tokens(filled.tokens)} ${coin.symbol} for ${money(filled.quote, coin.quote.symbol, { compact: false })}`
+                : side === "buy"
+                  ? "Bought"
+                  : "Sold"}{" "}
               — confirmed on {NETWORK_NAME}.
             </Label>
             {noteError ? <ErrorText>{noteError}</ErrorText> : null}
@@ -706,7 +717,13 @@ export function TradeSheet({
               <Button
                 label="Sign in to trade"
                 tall
-                onPress={() => void wallet.connect().catch(() => undefined)}
+                // The sign-in sheet renders in the app's tree, beneath this
+                // Modal: it opened invisibly behind the trade sheet. Close
+                // first, so signing in is on top; Buy is where it was after.
+                onPress={() => {
+                  onClose();
+                  void wallet.connect().catch(() => undefined);
+                }}
                 style={{ alignSelf: "stretch" }}
               />
             ) : (
@@ -768,6 +785,32 @@ export function TradeSheet({
  */
 function trimTrailingZeros(value: number): string {
   return String(Number(value.toPrecision(6)));
+}
+
+/**
+ * The curve's own record of this trade: its `Trade` event for this trader, in
+ * the receipts just confirmed. Null when it cannot be read, and then the sheet
+ * says the trade landed without quoting a figure it did not see.
+ */
+function tradeFilled(
+  receipts: TransactionReceipt[],
+  curve: string,
+  trader: string,
+  quoteDecimals: number,
+): { tokens: number; quote: number } | null {
+  try {
+    const events = parseEventLogs({ abi: junoCurveAbi, eventName: "Trade", logs: receipts.flatMap((r) => r.logs) }).filter(
+      (event) => event.address.toLowerCase() === curve.toLowerCase() && event.args.trader.toLowerCase() === trader.toLowerCase(),
+    );
+    const last = events[events.length - 1];
+    if (!last) return null;
+    return {
+      tokens: Number(formatUnits(last.args.tokenAmount, 18)),
+      quote: Number(formatUnits(last.args.quoteAmount, quoteDecimals)),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Six significant figures, rounded down: a share of a holding never exceeds it. */

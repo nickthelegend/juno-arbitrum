@@ -29,7 +29,7 @@ import { juno, type Coin, type StockReference, type Trader } from "../../lib/api
 import { explorer, FEED_NOTE, FEED_SOURCE } from "../../lib/chain";
 import { useLinkedState } from "../../lib/linked";
 import { count, invalidateMarkets, loadMarkets, progressLabel } from "../../lib/markets";
-import { age, money, useApi } from "../../lib/useApi";
+import { age, insideBand, money, useApi } from "../../lib/useApi";
 import { useViewerOnce } from "../../lib/social";
 import { theme } from "../../theme";
 
@@ -382,7 +382,7 @@ function StockCard({
           const nav = coin.nav ?? null;
           const deviation = nav?.deviationPct ?? null;
           const band = nav ? nav.bandBps / 100 : null;
-          const inside = deviation === null || band === null ? null : Math.abs(deviation) <= band;
+          const inside = deviation === null || band === null ? null : insideBand(deviation, band);
           return (
             <Tappable key={coin.address} onPress={() => onOpen(coin.address)} to={0.985}>
               <View style={styles.market}>

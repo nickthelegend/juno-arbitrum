@@ -112,3 +112,13 @@ export function tokens(value: number): string {
   if (value >= 1_000) return `${Math.round(value).toLocaleString("en-US")}`;
   return value.toFixed(value < 1 ? 4 : 2);
 }
+
+/**
+ * Whether a tracker's deviation from its stock sits inside the band, judged at
+ * the precision it is shown (two decimals). A tracker launches at 0.99x its
+ * stock, and -1.0000003% printed as "-1.00%" beside "outside ±1%" contradicted
+ * itself.
+ */
+export function insideBand(deviationPct: number, bandPct: number): boolean {
+  return Math.abs(Math.round(deviationPct * 100) / 100) <= bandPct;
+}

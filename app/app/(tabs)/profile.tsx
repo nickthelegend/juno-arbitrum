@@ -189,7 +189,7 @@ export default function ProfileScreen() {
           <Heading>
             <Handle wallet={wallet.address} />
           </Heading>
-          <Caption>Privy wallet · {NETWORK_NAME}</Caption>
+          <Caption>{wallet.emailLogin ? "Privy wallet" : "Browser wallet"} · {NETWORK_NAME}</Caption>
         </Identity>
 
         <WalletCard address={wallet.address} />
@@ -369,8 +369,9 @@ export default function ProfileScreen() {
         ) : (
           <Card>
             <Body muted>
-              This is a Privy wallet on {NETWORK_NAME}. Privy holds the key and signs only when you
-              ask, so the wallet follows your email to a new phone or browser — Juno never sees it.
+              {wallet.emailLogin
+                ? `This is a Privy wallet on ${NETWORK_NAME}. Privy holds the key and signs only when you ask, so the wallet follows your email to a new phone or browser — Juno never sees it.`
+                : `This is your browser wallet on ${NETWORK_NAME}. It holds the key and signs every trade itself — Juno never sees it.`}
               {NETWORK_NAME === "Arbitrum One" ? "" : " Everything here is test ETH and test USDC: no real money."}
             </Body>
             <Button

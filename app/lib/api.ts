@@ -105,11 +105,35 @@ async function request<T>(
   }
 }
 
+/**
+ * Every Juno call names the chain this build is for. One API serves several
+ * chains, and a call without `chainId` gets the server's default: an Arbitrum
+ * One build would have read Sepolia's coins. Calls that already name a chain
+ * keep theirs.
+ */
+function onChain(path: string, body: RequestInit["body"]): { path: string; body: RequestInit["body"] } {
+  if (!path.startsWith("/api/juno/")) return { path, body };
+  const named = /[?&]chainId=/.test(path) ? path : `${path}${path.includes("?") ? "&" : "?"}chainId=${CHAIN_ID}`;
+  if (typeof body !== "string") return { path: named, body };
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && !("chainId" in parsed)) {
+      return { path: named, body: JSON.stringify({ chainId: CHAIN_ID, ...parsed }) };
+    }
+  } catch {
+    // Not JSON: sent as it is.
+  }
+  return { path: named, body };
+}
+
 async function attempt<T>(
-  path: string,
+  rawPath: string,
   init: RequestInit & { timeoutMs?: number },
 ): Promise<T> {
-  const { timeoutMs = 45_000, ...rest } = init;
+  const { timeoutMs = 45_000, ...given } = init;
+  const scoped = onChain(rawPath, given.body);
+  const path = scoped.path;
+  const rest = { ...given, body: scoped.body };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 

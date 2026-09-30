@@ -141,7 +141,9 @@ Stylus `CurveMath`, a real Uniswap v3 deployment, local Postgres and Mongo, and
 a web build that signs with a browser wallet.
 
 ```bash
-bash scripts/localnet/up.sh                       # node, infra, contracts, address book
+bash scripts/localnet/up.sh                       # node + DBs (127.0.0.1), infra, contracts, address book;
+                                                  # run again after a reboot to restore (no redeploy)
+bash scripts/localnet/up.sh --fresh               # a new chain and empty local databases
 (cd scripts && npx tsx localnet/trackers.ts)      # TSLA / NVDA / AAPL trackers
 (cd server && set -a && . ./.env.localnet && set +a && npx next dev --port 3111)
 (cd app && EXPO_PUBLIC_API_URL=http://localhost:3111 EXPO_PUBLIC_CHAIN_ID=412346 \

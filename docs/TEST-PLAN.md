@@ -260,3 +260,55 @@ Found and fixed while doing it:
 | threads | text posts were never written by the app and their thread screen was unreachable | the launch caption is posted as the creator's post; feed cards link "Reply / N replies" to the thread |
 | holdings | sold-out positions listed as "0 jTSLA · $0" | holdings list only what is held (realised P&L stays in the totals) |
 | faucet | the card offered the faucet to a wallet that had used it, and the refusal was a 429 | `GET /api/juno/faucet?wallet=` says whether it may drip and the wait; the card shows it instead of asking |
+
+## M. Claude in Chrome pass, then a full re-run (1 Oct 2026)
+
+The local stack was rebuilt from nothing (`up.sh --fresh`), then the real
+Chrome was driven through Claude in Chrome against `http://localhost:8091`.
+Signed-in steps used a browser wallet put on `window.ethereum` for localhost,
+with a key made for this run that exists only on the local chain. It signs
+and sends every transaction itself, as MetaMask with a dev key would. The
+native file dialog cannot be driven, so the photo went into the picker's own
+`<input type=file>` through Chrome's upload tool. Console and network were
+read after every item.
+
+| ID | Item (real Chrome) | Result |
+|---|---|---|
+| M1 | Empty states: feed, reels, trade (three trackers), profile signed out, composer | PASS |
+| M2 | Bad links: `/coin/0xbad`, unknown coin, unknown post, bad wallet, empty wallet, unknown route | PASS (each says so; zero console errors; all 200) |
+| M3 | Visitor quote on jTSLA: 50 USDC → 0.140123 jTSLA, fee 0.875 USDC | PASS (equals `quoteBuy(50e6)` on-chain) |
+| M4 | Visitor 20,000 USDC buy | PASS (refused in words) |
+| M5 | Connect, faucet, name claim | FAIL → PASS (the faucet 500'd: see fixes) |
+| M6 | Launch a photo post (thin-name preset) with a 1-char ticker first | PASS (validation, then launched; caption posted) |
+| M7 | Buy 0.001 ETH; creator claims fees; sell 100% | FAIL → PASS (receipt showed the quote, not the fill) |
+| M8 | Tracker: "Sign in to trade", then 25 USDC Approve → Buy | FAIL → PASS (sign-in opened invisibly) |
+| M9 | Receipt's explorer link | PASS (local explorer shows the USDC in, Trade event, tokens out) |
+| M10 | Watch | PASS |
+
+Found and fixed:
+
+| Where | Problem | Fix |
+|---|---|---|
+| localnet | Nitro `--dev` kept recent state in memory: a reboot rolled the chain back to block 78 while the databases kept later rows. A SIGKILL leaves the sequencer out of step ("wrong msgIdx"), so every transaction fails, including the faucet's 500 | archive mode (state written every block); `up.sh` checks that the node accepts a transaction and says to use `--fresh` if not; `--fresh` recreates the chain and the databases together; a plain `up.sh` restores without redeploying. Checked: a graceful stop keeps blocks and sequencing |
+| localnet | node, Postgres (toy password) and Mongo (no auth) listened on every interface | published on 127.0.0.1 only, and `up.sh` creates all three containers |
+| app | reads and writes carried no `chainId`, so one API serving several chains answered with its default (an Arbitrum One build would have read Sepolia) | every `/api/juno` call carries the build's chain |
+| trade sheet | the Done line repeated the quote; on a fresh coin the fee falls by the second, so 44.68M filled where 44.19M was quoted | the line reads the curve's `Trade` event from the receipt; plan contributions count the amount really spent |
+| trade sheet | "Sign in to trade" opened the sign-in sheet beneath the trade sheet's Modal (invisible) | the trade sheet closes first |
+| coin page, trade tab, sheet | a new tracker at -1.0000003% read "-1.00%" and "outside ±1%" | inside/outside judged at the precision shown |
+| copy | "Privy creates a wallet…" and "Privy wallet" with a browser wallet | follows the wallet |
+
+Then everything again, from scratch: `node scripts/localnet/e2e.mjs` with
+fresh wallets: **41/41 PASS**. That includes the refused-faucet path, since
+this network's third drip went to the Chrome wallet. Also run: server unit
+tests 148/148, Foundry 31/31 (including Arbitrum One fork tests), Stylus
+`cargo test` 9/9, and app `tsc`, all green.
+
+Not testable here, and why:
+- **Privy email sign-in:** it needs a real inbox and a code, and sending one
+  on the user's behalf is off limits. The local web build uses the browser
+  wallet path. The Privy web build was checked up to the email step in the
+  second run (E14).
+- **Native Android and iOS:** no device run in this pass. The same app code
+  was typechecked. The APK and iOS builds need a rebuild to carry these fixes.
+- **Arbitrum Sepolia and One:** deferred until deployment. The deployer has no
+  test ETH, and mainnet is the user's to fund and run.

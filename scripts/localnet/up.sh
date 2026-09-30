@@ -7,7 +7,14 @@
 # write every address into config/addresses.ts under 412346.
 #
 #   bash scripts/localnet/up.sh          # idempotent: re-running redeploys Juno
+#   bash scripts/localnet/up.sh --fresh  # a new chain and empty local databases
+#
+# The node runs in archive mode so every block's state is written to disk: in
+# its default mode Nitro keeps recent state in memory and a hard stop (a
+# reboot) rolled the chain back to its last flush while the databases kept
+# the rows written after it.
 set -euo pipefail
+FRESH=0; [ "${1:-}" = "--fresh" ] && FRESH=1
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 set -a; source "$ROOT/.env"; set +a
 export ARB_LOCAL_RPC="${ARB_LOCAL_RPC:-http://localhost:8747}"
@@ -16,12 +23,21 @@ PORT="${RPC##*:}"
 # Nitro --dev's prefunded account: a published key that only exists on local dev chains.
 DEV_KEY=0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
 
+if [ "$FRESH" = 1 ]; then
+  # Only ever the local stack: the containers this script and the README start.
+  docker rm -f juno-nitro >/dev/null 2>&1 || true
+  docker exec juno-pg psql -q -U juno -d postgres -c 'DROP DATABASE IF EXISTS juno_local' -c 'CREATE DATABASE juno_local'
+  docker exec juno-mongo mongosh --quiet juno_local --eval 'db.dropDatabase()' >/dev/null
+  (cd "$ROOT/server" && npx tsx --env-file=.env.localnet scripts/migrate.ts >/dev/null && npx tsx --env-file=.env.localnet scripts/mongo-indexes.ts >/dev/null)
+  echo "local databases reset (juno_local on :55442 and :27027)"
+fi
+
 chain_id() { curl -s -m 3 -X POST "$RPC" -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' | grep -o '0x[0-9a-f]*' || true; }
 if [ "$(chain_id)" != "0x64aba" ]; then
   docker rm -f juno-nitro >/dev/null 2>&1 || true
   docker run -d --name juno-nitro -p "$PORT:8547" offchainlabs/nitro-node:v3.7.1-926f1ab \
     --dev --http.addr 0.0.0.0 --http.api=net,web3,eth,debug --http.corsdomain='*' --http.vhosts='*' \
-    --init.dev-max-code-size 49152 >/dev/null
+    --init.dev-max-code-size 49152 --execution.caching.archive >/dev/null
   for _ in $(seq 1 60); do [ "$(chain_id)" = "0x64aba" ] && break; sleep 2; done
 fi
 [ "$(chain_id)" = "0x64aba" ] || { echo "the Nitro dev node did not come up on $RPC"; exit 1; }

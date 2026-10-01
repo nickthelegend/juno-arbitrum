@@ -40,7 +40,13 @@ docker start juno-pg juno-mongo >/dev/null
 if [ "${NEW_DB:-0}" = 1 ]; then
   for _ in $(seq 1 30); do docker exec juno-pg pg_isready -U juno -d juno_local >/dev/null 2>&1 && break; sleep 1; done
   for _ in $(seq 1 30); do docker exec juno-mongo mongosh --quiet --eval 'db.runCommand({ping:1}).ok' >/dev/null 2>&1 && break; sleep 1; done
-  (cd "$ROOT/server" && npx tsx --env-file=.env.localnet scripts/migrate.ts >/dev/null && npx tsx --env-file=.env.localnet scripts/mongo-indexes.ts >/dev/null)
+  # A new container answers inside itself a moment before its published port
+  # does, so the first connection from here can time out: try a few times.
+  for attempt in 1 2 3 4 5 6; do
+    (cd "$ROOT/server" && npx tsx --env-file=.env.localnet scripts/migrate.ts >/dev/null && npx tsx --env-file=.env.localnet scripts/mongo-indexes.ts >/dev/null) && break
+    [ "$attempt" = 6 ] && { echo "the local databases did not come up"; exit 1; }
+    sleep 3
+  done
   echo "local databases created (Postgres 127.0.0.1:55442, Mongo 127.0.0.1:27027)"
 fi
 

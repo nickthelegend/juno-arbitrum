@@ -36,12 +36,13 @@ import {
   parseEther,
   parseUnits,
   type Hex,
+  type TransactionReceipt,
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 
 import { junoFactoryAbi } from "@config/abi";
 import { aggregatorAbi } from "../lib/juno/chainlink";
-import { deployment, publicClient, rpcUrls, SEPOLIA, viemChain } from "../lib/juno/chains";
+import { deployment, LOCAL, publicClient, rpcUrls, SEPOLIA, viemChain, type ChainId } from "../lib/juno/chains";
 import { nameMessage } from "../lib/juno/names";
 import { pinJson } from "../lib/juno/pinata";
 import { sessionMessage } from "../lib/juno/session";
@@ -54,13 +55,27 @@ const arg = (flag: string, fallback: string) =>
 const API = arg("--api", process.env.JUNO_API ?? "http://localhost:3100").replace(/\/$/, "");
 const FUNDER = arg("--funder", "faucet");
 const FUND_ETH = parseEther(arg("--fund", "0.012"));
-const CHAIN = SEPOLIA;
+/** `--chain 412346` seeds the local Nitro node; Arbitrum Sepolia by default. */
+const CHAIN = Number(arg("--chain", String(SEPOLIA))) as ChainId;
 
 const deployed = deployment(CHAIN);
-if (!deployed) throw new Error("Juno is not deployed on Arbitrum Sepolia (config/addresses.ts has no factory).");
+if (!deployed) throw new Error(`Juno is not deployed on chain ${CHAIN} (config/addresses.ts has no factory).`);
 const rpc = rpcUrls(CHAIN)[0];
-const isLocal = /127\.0\.0\.1|localhost/.test(rpc);
+/** An anvil fork of Sepolia: balances are set, not sent. The local Nitro node is a real chain. */
+const isLocal = /127\.0\.0\.1|localhost/.test(rpc) && CHAIN !== LOCAL;
 const client = publicClient(CHAIN);
+
+/** What the run cost: every confirmed transaction's gas and the ETH it sent. */
+const spent = { txs: 0, gas: 0n, gasEth: 0n, valueEth: 0n, funding: 0n };
+async function confirm(hash: Hex): Promise<TransactionReceipt> {
+  const receipt = await client.waitForTransactionReceipt({ hash });
+  const tx = await client.getTransaction({ hash });
+  spent.txs += 1;
+  spent.gas += receipt.gasUsed;
+  spent.gasEth += receipt.gasUsed * receipt.effectiveGasPrice;
+  spent.valueEth += tx.value;
+  return receipt;
+}
 
 /* ------------------------------------------------------------------ */
 /* The plan                                                            */
@@ -228,7 +243,7 @@ async function sendSteps(account: PrivateKeyAccount, steps: Step[]): Promise<Hex
   let last: Hex | null = null;
   for (const step of steps) {
     const hash = await wallet.sendTransaction({ to: step.to, data: step.data, value: BigInt(step.value), gas: BigInt(step.gas) });
-    const receipt = await client.waitForTransactionReceipt({ hash });
+    const receipt = await confirm(hash);
     if (receipt.status !== "success") throw new Error(`${step.label} reverted: ${hash}`);
     last = hash;
   }
@@ -260,13 +275,16 @@ async function fund(accounts: Record<Name, PrivateKeyAccount>) {
       if (anvil) await anvil.setBalance({ address: account.address, value: parseEther("1") });
       else {
         const hash = await walletOf(funder!).sendTransaction({ to: account.address, value: FUND_ETH - balance });
-        await client.waitForTransactionReceipt({ hash });
+        await confirm(hash);
+        // A top-up moves ETH between our own keys; it is not what the demo costs.
+        spent.valueEth -= FUND_ETH - balance;
+        spent.funding += FUND_ETH - balance;
       }
       console.log(`  funded ${name} to ${anvil ? "1" : formatEther(FUND_ETH)} ETH`);
     }
     if (deployed!.usdc && !progress.funded[name]) {
       const hash = await walletOf(account).writeContract({ address: deployed!.usdc, abi: testUsdc, functionName: "mint", args: [account.address, parseUnits("500", 6)] });
-      await client.waitForTransactionReceipt({ hash });
+      await confirm(hash);
       progress.funded[name] = true;
       save();
       console.log(`  minted 500 test USDC to ${name}`);
@@ -326,8 +344,18 @@ async function launchPosts(accounts: Record<Name, PrivateKeyAccount>) {
 }
 
 async function launchTrackers(launcher: PrivateKeyAccount) {
+  // A stock that already has a tracker on this chain keeps it: a second jTSLA
+  // beside the first would split the market for no reason.
+  const stocks = await api<Array<{ symbol: string; trackers: Array<{ address: string; pool: string }> }>>(`/api/juno/stocks?chainId=${CHAIN}`).catch(() => []);
   for (const tracker of TRACKERS) {
     if (progress.coins[tracker.key]) continue;
+    const existing = stocks.find((stock) => stock.symbol === tracker.key)?.trackers[0];
+    if (existing) {
+      progress.coins[tracker.key] = { token: existing.address, curve: existing.pool };
+      save();
+      console.log(`  j${tracker.key} already listed: ${existing.address}`);
+      continue;
+    }
     const feed = deployed!.feeds[tracker.key];
     if (!feed || !deployed!.usdc) {
       console.log(`  ${tracker.key}: no feed or USDC on this chain, skipped`);
@@ -358,7 +386,7 @@ async function launchTrackers(launcher: PrivateKeyAccount) {
       feedDecimals: Number(decimals),
     });
     const hash = await walletOf(launcher).writeContract({ address: deployed!.factory, abi: junoFactoryAbi, functionName: "launchTracker", args: [params] });
-    await client.waitForTransactionReceipt({ hash });
+    await confirm(hash);
     const recorded = await record(hash);
     if (!recorded.launched) throw new Error(`${tracker.key}: launch not recorded`);
     progress.coins[tracker.key] = recorded.launched;
@@ -414,13 +442,15 @@ async function graduate(accounts: Record<Name, PrivateKeyAccount>) {
     const pinned = await api<{ uri: string }>("/api/juno/metadata", {
       name: "Graduation Day",
       symbol: "GRAD",
-      description: "A small curve launched to fill and graduate into Uniswap v3, end to end.",
-      mediaUrl: "ipfs://QmdPaKD9DuWJ9b2DSPoSQFLaBvKGPcpMs4Lq5XUVTPPd4t",
+      description: "Shades on. A small curve that filled and moved into its own Uniswap v3 pool.",
+      // Its own photo: a still from the Juno film, so the feed does not show
+      // The Falls twice.
+      mediaUrl: "ipfs://Qma1aVKwXo1pqkGsrTPmMfkJHLcSDzA2EFUxBHVyam8hB1",
       mimeType: "image/jpeg",
       format: "post",
       creator: creator.address,
-      width: 3000,
-      height: 2002,
+      width: 1600,
+      height: 900,
       curvePreset: "content",
     });
     // 0.0004 ETH opening cap: the whole curve fills for about a tenth of a cent.
@@ -430,7 +460,7 @@ async function graduate(accounts: Record<Name, PrivateKeyAccount>) {
       functionName: "launch",
       args: [{ name: "Graduation Day", symbol: "GRAD", metadataURI: pinned.uri, preset: 0, quote: "0x0000000000000000000000000000000000000000", p0: launchP0(parseEther("0.0004")), capFp: 25n * 10n ** 18n }, 0n],
     });
-    await client.waitForTransactionReceipt({ hash });
+    await confirm(hash);
     const recorded = await record(hash);
     progress.coins.GRAD = recorded.launched!;
     save();
@@ -471,6 +501,19 @@ async function graduate(accounts: Record<Name, PrivateKeyAccount>) {
   save();
 }
 
+/** Each creator's caption, posted as their first post on the coin, as the app does at launch. */
+async function captions(accounts: Record<Name, PrivateKeyAccount>) {
+  for (const post of POSTS) {
+    const coin = progress.coins[post.key];
+    const id = `caption:${post.key}`;
+    if (!coin || progress.social[id]) continue;
+    await api("/api/juno/posts", { chainId: CHAIN, authorWallet: accounts[post.creator].address, body: post.description, token: coin.token });
+    progress.social[id] = true;
+    save();
+  }
+  console.log("  captions posted");
+}
+
 async function social(accounts: Record<Name, PrivateKeyAccount>) {
   for (const comment of COMMENTS) {
     const id = `${comment.who}:${comment.coin}`;
@@ -507,22 +550,41 @@ async function social(accounts: Record<Name, PrivateKeyAccount>) {
   console.log("  comments, likes, follows and posts done");
 }
 
+/**
+ * Fetch every reel, poster and photo once through the API's IPFS route, so the
+ * first person to open the demo is served from cache rather than waiting on a
+ * cold gateway (a 4 MB reel took ~7 s the first time).
+ */
+async function warmMedia() {
+  const cids = new Set<string>();
+  for (const post of POSTS) for (const uri of [post.media, post.poster]) if (uri) cids.add(uri.replace("ipfs://", ""));
+  cids.add("Qma1aVKwXo1pqkGsrTPmMfkJHLcSDzA2EFUxBHVyam8hB1");
+  for (const cid of cids) {
+    const started = Date.now();
+    const response = await fetch(`${API}/api/ipfs/${cid}`).catch(() => null);
+    const bytes = response?.ok ? (await response.arrayBuffer()).byteLength : 0;
+    console.log(`  ${cid.slice(0, 10)}… ${response?.status ?? "failed"} ${Math.round(bytes / 1024)} KB in ${Date.now() - started} ms`);
+  }
+}
+
 async function main() {
-  console.log(`Juno demo on ${isLocal ? "a local fork" : "Arbitrum Sepolia"} via ${API}`);
+  console.log(`Juno demo on ${isLocal ? "a local fork" : CHAIN === LOCAL ? "the local Nitro node" : "Arbitrum Sepolia"} via ${API}`);
   const accounts = Object.fromEntries(WALLETS.map((name) => [name, keyFor(name)])) as Record<Name, PrivateKeyAccount>;
   for (const name of WALLETS) console.log(`  ${name} ${accounts[name].address}`);
 
   console.log("\nfunding"); await fund(accounts);
   console.log("\nnames"); await claimNames(accounts);
-  console.log("\nposts and reels"); await launchPosts(accounts);
+  console.log("\nposts and reels"); await launchPosts(accounts); await captions(accounts);
   console.log("\nstock trackers"); await launchTrackers(accounts.demo_maya);
   console.log("\ntrades"); await trade(accounts);
   console.log("\ngraduation"); await graduate(accounts);
   console.log("\nsocial"); await social(accounts);
+  console.log("\nmedia"); await warmMedia();
 
   const coins = await api<{ coins: Array<{ symbol: string; volume24h: number; holders: number; curve: { graduated: boolean } }> }>(`/api/juno/coins?chainId=${CHAIN}&limit=60`);
   console.log(`\n${coins.coins.length} markets:`);
   for (const coin of coins.coins) console.log(`  ${coin.symbol.padEnd(8)} vol24h $${coin.volume24h.toFixed(2)}  holders ${coin.holders}${coin.curve.graduated ? "  graduated" : ""}`);
+  console.log(`\ncost: ${spent.txs} transactions, ${spent.gas} gas = ${formatEther(spent.gasEth)} ETH in fees, plus ${formatEther(spent.valueEth)} ETH into curves (buys); ${formatEther(spent.funding)} ETH moved to the demo wallets`);
   process.exit(0);
 }
 

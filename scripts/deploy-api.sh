@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the API (server/) locally with Vercel's builder and deploy it to the
-# juno-arb-api project. server/.env.local is moved aside for the build, because
+# juno-arb-api project. server/.env* (but .env.example) is moved aside for the build, because
 # Vercel's Next builder otherwise ships local env files inside the functions.
 #
 #   bash scripts/deploy-api.sh
@@ -9,8 +9,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCOPE="${VERCEL_SCOPE:-nicolas-projects-f497bb7f}"
 cd "$ROOT"
 HOLD="$(mktemp -d)"
-[ -f server/.env.local ] && mv server/.env.local "$HOLD/"
-trap '[ -f "$HOLD/.env.local" ] && mv "$HOLD/.env.local" server/.env.local' EXIT
+# Every local env file (.env.local, .env.localnet, ...) is set aside, not just
+# one: Vercel's builder ships whatever .env* it finds into the functions.
+for f in server/.env*; do
+  case "$f" in server/.env.example) ;; *) [ -f "$f" ] && mv "$f" "$HOLD/" ;; esac
+done
+trap 'for f in "$HOLD"/.env*; do [ -f "$f" ] && mv "$f" server/; done' EXIT
 rm -rf .vercel/output
 vercel pull --yes --environment=production --scope "$SCOPE" >/dev/null
 # The API lives in server/ but imports ../config, so it is built from the repo

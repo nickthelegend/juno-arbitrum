@@ -535,7 +535,16 @@ function ReelVideo({
     if (status === "readyToPlay" && wantPlay.current && !player.playing) player.play();
   });
 
+  const lifted = useRef(false);
   useEventListener(player, "timeUpdate", ({ currentTime }) => {
+    // The poster lifts off once real frames are moving — the playhead has
+    // advanced — so a slow network shows the reel's still, not black. On the
+    // web the player reports "playing" as soon as play() is asked for, before
+    // a single frame has arrived, which faded the poster onto a black video.
+    if (!lifted.current && currentTime > 0) {
+      lifted.current = true;
+      Animated.timing(cover, { toValue: 0, duration: 220, useNativeDriver: nativeDriver }).start();
+    }
     const duration = player.duration;
     if (!(duration > 0)) return;
     Animated.timing(progress, {
@@ -544,14 +553,6 @@ function ReelVideo({
       easing: Easing.linear,
       useNativeDriver: nativeDriver,
     }).start();
-  });
-
-  // The poster lifts off once real frames are moving, so a slow network shows
-  // the reel's first frame rather than a black rectangle.
-  useEventListener(player, "playingChange", ({ isPlaying }) => {
-    if (isPlaying) {
-      Animated.timing(cover, { toValue: 0, duration: 220, useNativeDriver: nativeDriver }).start();
-    }
   });
 
   return (

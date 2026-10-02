@@ -17,9 +17,9 @@ Built for **Arbitrum Open House Singapore** (online buildathon, Sep 14 – Oct 4
 
 | | |
 |---|---|
-| **Try it** | **https://juno-arb-app.vercel.app** · Android APK + iOS Simulator build in [release v0.1.0](https://github.com/nickthelegend/juno-arbitrum/releases/tag/v0.1.0) |
+| **Try it** | **https://juno-arb-app.vercel.app** · Android APK + iOS Simulator build in [release v0.2.0](https://github.com/nickthelegend/juno-arbitrum/releases/tag/v0.2.0) |
 | **Demo film** | [juno-arbitrum-film-1080p.mp4](https://github.com/nickthelegend/juno-arbitrum/releases/download/v0.1.0/juno-arbitrum-film-1080p.mp4) (2:36): every shot is the live app on Arbitrum Sepolia or real proof-script output ([how it's made](docs/FILM.md)) |
-| **Network** | Arbitrum Sepolia (test ETH — Profile → *Get test ETH*). Contracts also on Arbitrum One ([mainnet proof](#arbitrum-one-proof)). |
+| **Network** | Arbitrum Sepolia: live and seeded (test ETH from Profile → *Get test ETH*). Arbitrum One: [ready to deploy, not deployed yet](#arbitrum-one). |
 | **API** | https://juno-arb-api.vercel.app/api/health |
 | **Docs** | [PLAN.md](PLAN.md) · [docs/API.md](docs/API.md) · [docs/SECURITY.md](docs/SECURITY.md) · [screenshots](docs/qa) |
 
@@ -71,13 +71,13 @@ server read them from there).
 
 | | Arbitrum Sepolia (421614) | Arbitrum One (42161) |
 |---|---|---|
-| CurveMath (Stylus) | [`0x5125…4f37`](https://sepolia.arbiscan.io/address/0x5125c9e14b64acd48bf7116a93c9b66df89a4f37) | *pending* |
-| JunoFactory | [`0xBc89…E87a`](https://sepolia.arbiscan.io/address/0xBc89E74A36a9EFf7B938211ea4B82650DA3BE87a) | *pending* |
-| Curve implementation | [`0x3a4A…A9F1`](https://sepolia.arbiscan.io/address/0x3a4A8c33D8a3BacA2B58d608107a6E1Aa2B9A9F1) | *pending* |
+| CurveMath (Stylus) | [`0x5125…4f37`](https://sepolia.arbiscan.io/address/0x5125c9e14b64acd48bf7116a93c9b66df89a4f37) | not deployed |
+| JunoFactory | [`0xBc89…E87a`](https://sepolia.arbiscan.io/address/0xBc89E74A36a9EFf7B938211ea4B82650DA3BE87a) | not deployed |
+| Curve implementation | [`0x3a4A…A9F1`](https://sepolia.arbiscan.io/address/0x3a4A8c33D8a3BacA2B58d608107a6E1Aa2B9A9F1) | not deployed |
 | Quote for trackers | Juno Test USDC [`0x0afe…72ab`](https://sepolia.arbiscan.io/address/0x0afe4b5763813083D487B30215BDD21012c172ab) | Circle USDC `0xaf88…5831` |
 | Stock feeds | MockAggregators mirroring Arbitrum One | Chainlink `TSLA/USD 0x3609…C3E3`, `NVDA/USD 0x4881…262F`, `AAPL/USD 0x8d0C…557c` |
 | Uniswap v3 NonfungiblePositionManager | `0x6b29…4d65` | `0xC364…FE88` |
-| Graduated example | `GRAD` → Uniswap v3 pool [`0x93fC…02CA`](https://sepolia.arbiscan.io/address/0x93fCeb86fd1Bc5aa85FE181b1560D7bfC1Bc02CA), position #3803 | — |
+| Graduated examples | *Graduation Day* `GRAD` → Uniswap v3 pool [`0xc9f9…c39d`](https://sepolia.arbiscan.io/address/0xc9f9263410cbf1f26c93578085666fb29945c39d); the first test `GRAD` → [`0x93fC…02CA`](https://sepolia.arbiscan.io/address/0x93fCeb86fd1Bc5aa85FE181b1560D7bfC1Bc02CA), position #3803 | — |
 
 **Source verification.** The Solidity contracts (factory, curve
 implementation, every launched token, test USDC, mock feeds) are verified on
@@ -94,13 +94,19 @@ which the workflow recreates.
 
 **Operations.** An indexer pass runs every 5 minutes
 ([`index`](.github/workflows/index.yml), authenticated with `JUNO_INDEX_SECRET`),
-and the Sepolia mock feeds follow the real Arbitrum One feeds every 30 minutes
-in US market hours ([`feeds`](.github/workflows/feeds.yml)), signed by a keeper
-key that owns only the three mocks.
+and the Sepolia mock feeds follow the real Arbitrum One feeds: the API
+mirrors them whenever prices are read (at most every 5 minutes, when the real
+price moved 0.5% or is 4 hours newer), with the [`feeds`](.github/workflows/feeds.yml)
+cron as a backstop, signed by a keeper key that owns only the three mocks.
 
-### Arbitrum One proof
-Run by the deployer with `npx tsx scripts/mainnet-proof.ts` (it asks before
-every transaction); results land in [`docs/mainnet-proof.log`](docs/mainnet-proof.log).
+### Arbitrum One
+Not deployed yet: it needs about 0.005 ETH on Arbitrum One for the deployer
+(measured against live gas: deploy ≈ 15M gas + a 0.00011 ETH Stylus activation
+fee, proof ≈ 14M gas + 0.0015 ETH of buys). The contracts are tested on an
+Arbitrum One fork against the real Chainlink feeds, Circle USDC and Uniswap v3.
+Deploying is one command, `CHAIN=one bash scripts/deploy.sh` (it asks before
+spending). The proof, `npx tsx scripts/mainnet-proof.ts`, will write
+`docs/mainnet-proof.log`.
 
 ## Verification
 

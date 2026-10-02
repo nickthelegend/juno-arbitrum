@@ -64,15 +64,11 @@ export function usePrivyBridge(): PrivyBridge {
   const wallet = ethereum.wallets?.[0] ?? null;
   const walletError = state.status === "error" ? state.error : null;
 
-  // Release builds only surface console.error, so the wallet's progress is
-  // logged at that level: it is the one thing worth reading when sign-in stalls.
+  // A wallet that failed to come up is worth a line in the device log (release
+  // builds only keep console.error); its ordinary progress is not.
   useEffect(() => {
-    console.error(
-      `[juno:privy] user=${user ? "yes" : "no"} ethereum=${state.status} wallets=${ethereum.wallets?.length ?? 0}${
-        walletError ? ` error=${walletError}` : ""
-      }`,
-    );
-  }, [user, state.status, ethereum.wallets?.length, walletError]);
+    if (walletError) console.error(`[juno:privy] wallet error: ${walletError}`);
+  }, [walletError]);
 
   // `createOnLogin` covers a new sign-in. A user who signed in before the
   // wallet existed comes back with none, so make one, but only after giving

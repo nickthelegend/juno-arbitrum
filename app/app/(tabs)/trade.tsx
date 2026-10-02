@@ -1,7 +1,7 @@
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import styled from "styled-components/native";
@@ -259,10 +259,15 @@ function Intro({
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "pos" | "neg" }) {
+  // Three figures share a card row; on the narrowest phones a price like
+  // "$332.77" was cut to "$332…". adjustsFontSizeToFit is ignored on the web,
+  // so the size is chosen from the screen and the figure's length.
+  const { width } = useWindowDimensions();
+  const fontSize = width >= 360 ? 17 : value.length > 6 ? 13 : 15;
   return (
     <View style={{ flex: 1, gap: 3 }}>
       <Text
-        style={[styles.statValue, tone ? { color: tone === "pos" ? theme.colors.pos : theme.colors.neg } : null]}
+        style={[styles.statValue, { fontSize }, tone ? { color: tone === "pos" ? theme.colors.pos : theme.colors.neg } : null]}
         numberOfLines={1}
         adjustsFontSizeToFit
       >

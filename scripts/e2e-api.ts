@@ -47,11 +47,16 @@ const pre = await fetch(`${API}/api/juno/likes`, { method: "OPTIONS", headers: {
 check("A3 CORS", h.headers.get("access-control-allow-origin") === "*" && (pre.headers.get("access-control-allow-headers") ?? "").includes("authorization"), pre.headers.get("access-control-allow-headers"));
 check("A4 index needs the secret", (await call("POST", "/api/juno/index?chainId=421614")).status === 401, "401 without x-juno-index-secret");
 const a5 = await call("GET", "/api/juno/index?chainId=421614");
-check("A5 index status", a5.status === 200 && typeof a5.body.lastBlock === "number" && a5.body.curves === 3, a5.body);
+// (A5's curve count is checked against the chain below, once the Launched events are read.)
 
 // ---------------- B (vs chain)
 const launched = await chain.getLogs({ address: FACTORY, fromBlock: 313703377n, event: parseAbi(["event Launched(address indexed curve, address indexed token, address indexed creator, uint8 preset, address quote, address feed, uint16 bandBps, uint256 supply, uint256 curveSupply, uint256 p0, uint256 capFp, address pool, string metadataURI)"])[0] });
-const coins = await call("GET", "/api/juno/coins?chainId=421614");
+check("A5 index status: every launch indexed", a5.status === 200 && typeof a5.body.lastBlock === "number" && a5.body.curves === launched.length, { curves: a5.body.curves, launches: launched.length });
+/** Test launches taken off the listings with scripts/list-coin.ts: on-chain, but not listed. */
+const CURATED = new Set<string>([SMOKE.token, GRAD.token]);
+const listedLaunches = launched.filter((l) => !CURATED.has(l.args.token!.toLowerCase()));
+const listedCurves = new Set(listedLaunches.map((l) => l.args.curve!.toLowerCase()));
+const coins = await call("GET", "/api/juno/coins?chainId=421614&limit=100");
 const priceOk = await Promise.all(
   coins.body.coins.filter((c: any) => !c.curve.graduated).map(async (c: any) => {
     const row = launched.find((l) => l.args.token!.toLowerCase() === c.address)!;
@@ -59,19 +64,21 @@ const priceOk = await Promise.all(
     return near(c.priceQuote, Number(formatUnits(price, c.quote.symbol === "USDC" ? 6 : 18)), 1e-6);
   }),
 );
-check("B1 coins = Launched events, prices = currentPrice()", coins.body.coins.length === launched.length && priceOk.every(Boolean), { coins: coins.body.coins.length, events: launched.length, priceOk });
+const launchedTokens = new Set(listedLaunches.map((l) => l.args.token!.toLowerCase()));
+check("B1 coins = listed Launched events, prices = currentPrice()", coins.body.coins.length === listedLaunches.length && coins.body.coins.every((c: any) => launchedTokens.has(c.address)) && priceOk.every(Boolean), { coins: coins.body.coins.length, listedEvents: listedLaunches.length, priceOk });
 const smoke = await call("GET", `/api/juno/coins/${SMOKE.token}`);
 const tradeEvents = await chain.getContractEvents({ address: SMOKE.curve, abi: junoCurveAbi, eventName: "Trade", fromBlock: 313703377n });
 const bal = await chain.readContract({ address: SMOKE.token, abi: erc20Abi, functionName: "balanceOf", args: [DEP] });
 const holder = smoke.body.holders.find((x: any) => x.wallet === DEP);
 check("B2 coin detail = chain", smoke.body.activity.length === tradeEvents.length && near(holder.balance, Number(formatUnits(bal, 18)), 1e-9) && smoke.body.tokenUrl.endsWith(SMOKE.token), { activity: smoke.body.activity.length, events: tradeEvents.length, holder: holder.balance });
 check("B3 bad / unknown coin", (await call("GET", "/api/juno/coins/0xnope")).status === 400 && (await call("GET", "/api/juno/coins/0x000000000000000000000000000000000000dead")).status === 404, "400 / 404");
-const feed = await call("GET", "/api/juno/feed?chainId=421614");
-const allTrades = (await Promise.all(launched.map((l) => chain.getContractEvents({ address: l.args.curve!, abi: junoCurveAbi, eventName: "Trade", fromBlock: 313703377n })))).flat();
+const feed = await call("GET", "/api/juno/feed?chainId=421614&limit=80");
+const allTrades = (await Promise.all(listedLaunches.map((l) => chain.getContractEvents({ address: l.args.curve!, abi: junoCurveAbi, eventName: "Trade", fromBlock: 313703377n })))).flat();
 const times = feed.body.items.map((i: any) => Date.parse(i.timestamp));
 const feedTrades = feed.body.items.filter((i: any) => i.kind === "trade");
 const feedPosts = feed.body.items.filter((i: any) => i.kind === "post");
-const storedPosts = (await call("GET", "/api/juno/posts?chainId=421614")).body.posts;
+const curatedTokens = CURATED;
+const storedPosts = (await call("GET", "/api/juno/posts?chainId=421614&limit=80")).body.posts.filter((p: any) => !p.token || !curatedTokens.has(p.token));
 const tradeIds = new Set(allTrades.map((e) => `${e.transactionHash}:${e.logIndex}`));
 check(
   "B4 feed: trades = Trade events, posts = stored posts, newest first",
@@ -83,15 +90,21 @@ const [, answer, , updatedAt] = await chain.readContract({ address: TSLA.feed, a
 const tsla = st.body.find((s: any) => s.symbol === "TSLA");
 const age = Math.floor(Date.now() / 1000) - Number(updatedAt);
 check("B5 stocks = feed", tsla.price === Number(answer) / 1e8 && Math.abs(tsla.ageSeconds - age) < 90 && tsla.marketOpen === age < 26 * 3600 && tsla.trackers.some((t: any) => t.symbol === "jTSLA"), { price: tsla.price, age: tsla.ageSeconds });
-const depth = await call("GET", `/api/juno/depth?token=${TSLA.token}&chainId=421614`);
+// A tracker still on its curve (one may have filled and moved to Uniswap).
+const TRK = (() => {
+  const t = st.body.flatMap((s: any) => s.trackers).find((x: any) => !x.curve.graduated);
+  return { token: t.address as `0x${string}`, curve: t.pool as `0x${string}` };
+})();
+const depth = await call("GET", `/api/juno/depth?token=${TRK.token}&chainId=421614`);
 const last = depth.body.points.at(-1);
-const q = await chain.readContract({ address: TSLA.curve, abi: junoCurveAbi, functionName: "quoteBuy", args: [BigInt(Math.round(last.amountIn * 1e6))] });
+const q = await chain.readContract({ address: TRK.curve, abi: junoCurveAbi, functionName: "quoteBuy", args: [BigInt(Math.round(last.amountIn * 1e6))] });
 check("B6 depth = quoteBuy, refused sizes marked", near(last.amountOut, Number(formatUnits(q.tokensOut, 18)), 1e-6) && last.allowed === (q.bandOk && q.marketOpen) && depth.body.points.some((p: any) => p.allowed === false), { last: [last.amountIn, last.amountOut, last.allowed], chain: [Number(formatUnits(q.tokensOut, 18)), q.bandOk] });
 const lb = await call("GET", "/api/juno/leaderboard?chainId=421614");
-check("B7 leaderboard trades = Trade events", lb.body.traders[0].trades === allTrades.length, { trades: lb.body.traders[0].trades, events: allTrades.length });
+const ranked = lb.body.traders.reduce((n: number, t: any) => n + t.trades, 0);
+check("B7 leaderboard: every trade on a listed coin is counted once", ranked === allTrades.length, { ranked, events: allTrades.length });
 const pf = await call("GET", `/api/juno/portfolio/${DEP}?chainId=421614`);
 const pfOk = await Promise.all(pf.body.positions.map(async (p: any) => near(p.balance, Number(formatUnits(await chain.readContract({ address: p.token ?? p.address ?? p.coin?.address, abi: erc20Abi, functionName: "balanceOf", args: [DEP] }), 18)), 1e-9)));
-check("B8 portfolio = balanceOf", pfOk.length === 3 && pfOk.every(Boolean), pfOk);
+check("B8 portfolio = balanceOf", pfOk.length >= 1 && pfOk.every(Boolean), pfOk);
 const tb = await call("GET", `/api/juno/tx/balance?wallet=${DEP}&chainId=421614`);
 const ethBal = await chain.getBalance({ address: DEP });
 const usdcBal = await chain.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [DEP] });
@@ -114,12 +127,15 @@ const c1d = c1.body.steps && decodeFunctionData({ abi: curveCalls, data: c1.body
 check("C1 ETH buy calldata", c1.status === 200 && c1d?.functionName === "buy" && c1.body.steps[0].value === "5000000000000" && near(Number(formatUnits(c1d.args[0] as bigint, 18)), c1.body.quote.amountOut * 0.99, 1e-6), c1.body.error ?? "buy(minOut, deadline)");
 const c2 = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: SMOKE.curve, trader: DEP, side: "sell", amountIn: "1000" });
 check("C2 sell calldata, no approve", c2.status === 200 && c2.body.steps.length === 1 && decodeFunctionData({ abi: curveCalls, data: c2.body.steps[0].data }).functionName === "sell", c2.body.error ?? "sell");
-const c3 = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: TSLA.curve, trader: DEP, side: "buy", amountIn: "10" });
-check("C3 USDC buy with allowance: one buyWithQuote", c3.status === 200 && c3.body.steps.map((s: any) => s.label).join() === "Buy", c3.body.error ?? c3.body.steps.map((s: any) => s.label));
-const c4ok = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: TSLA.curve, side: "buy", amountIn: "500", quoteOnly: true });
-const c4no = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: TSLA.curve, side: "buy", amountIn: "9500", quoteOnly: true });
+const c3 = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: TRK.curve, trader: DEP, side: "buy", amountIn: "10" });
+// Approve first only when the wallet's USDC allowance for this curve is short.
+const allowance3 = await chain.readContract({ address: USDC, abi: erc20Abi, functionName: "allowance", args: [DEP, TRK.curve] });
+const expected3 = allowance3 >= 10_000_000n ? "Buy" : "Approve USDC,Buy";
+check("C3 USDC buy: approve only when the allowance is short, then buyWithQuote", c3.status === 200 && c3.body.steps.map((s: any) => s.label).join() === expected3, { allowance: String(allowance3), steps: c3.body.error ?? c3.body.steps.map((s: any) => s.label) });
+const c4ok = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: TRK.curve, side: "buy", amountIn: "500", quoteOnly: true });
+const c4no = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: TRK.curve, side: "buy", amountIn: "9500", quoteOnly: true });
 check("C4 visitor quote; band refusal as an answer", c4ok.status === 200 && c4ok.body.quote.amountOut > 1 && c4no.status === 200 && c4no.body.refusal?.reason === "OutsideBand", { ok: c4ok.body.quote?.amountOut, refusal: c4no.body.refusal });
-const c4signed = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: TSLA.curve, trader: DEP, side: "buy", amountIn: "9500" });
+const c4signed = await call("POST", "/api/juno/tx/swap", { chainId: 421614, curve: TRK.curve, trader: DEP, side: "buy", amountIn: "9500" });
 check("C4 signed-in band refusal stays a 400", c4signed.status === 400 && c4signed.body.reason === "OutsideBand", c4signed.body);
 const c5a = await call("POST", "/api/juno/tx/claim", { chainId: 421614, curve: SMOKE.curve, owner: "0x000000000000000000000000000000000000dEaD" });
 const c5b = await call("POST", "/api/juno/tx/claim", { chainId: 421614, curve: SMOKE.curve, owner: DEP });

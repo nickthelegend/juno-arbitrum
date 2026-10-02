@@ -364,21 +364,21 @@ export default function CoinScreen() {
               <Band>
                 <Cell>
                   <CellValue>{money(coin.marketCap, coin.marketCapCurrency)}</CellValue>
-                  <Caption numberOfLines={1}>Market cap</Caption>
+                  <Caption numberOfLines={2}>Market cap</Caption>
                 </Cell>
                 <Divider />
                 <Cell>
                   <CellValue>
                     {coin.totalVolume === null ? "—" : money(coin.totalVolume, coin.marketCapCurrency)}
                   </CellValue>
-                  <Caption numberOfLines={1}>Total volume</Caption>
+                  <Caption numberOfLines={2}>Total volume</Caption>
                 </Cell>
                 <Divider />
                 <Cell>
                   <CellValue>
                     {money(coin.creatorRewards, coin.marketCapCurrency, { compact: false })}
                   </CellValue>
-                  <Caption numberOfLines={1}>Creator rewards</Caption>
+                  <Caption numberOfLines={2}>Creator rewards</Caption>
                 </Cell>
               </Band>
 

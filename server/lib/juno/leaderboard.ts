@@ -126,7 +126,8 @@ const board = ttlCache<Leaderboard>(30_000);
 
 export async function leaderboard(chainId: ChainId): Promise<Leaderboard> {
   return board.get(`${chainId}`, async () => {
-    const rows = await listCurves(chainId, 500);
+    // Listed coins only: a coin taken off the listings does not rank its traders.
+    const rows = await listCurves(chainId, 500, { listedOnly: true });
     const [trades, states] = await Promise.all([
       tradesForCurves(rows.map((row) => row.curve), 50_000),
       readCurveStates(chainId, rows.map((row) => row.curve)),

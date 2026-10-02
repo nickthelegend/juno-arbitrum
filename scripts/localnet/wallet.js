@@ -25,12 +25,22 @@
     if (body.error) throw Object.assign(new Error(body.error.message), { code: body.error.code, data: body.error.data });
     return body.result;
   };
+  cfg.disconnect = () => {
+    sessionStorage.removeItem("juno-test-wallet-connected");
+    (listeners.accountsChanged ?? []).forEach((fn) => fn([]));
+  };
   window.ethereum = {
     isJunoTestWallet: true,
     on: (event, fn) => ((listeners[event] ??= []).push(fn)),
     removeListener: (event, fn) => (listeners[event] = (listeners[event] ?? []).filter((f) => f !== fn)),
     request: async ({ method, params }) => {
       const { v, account, wallet } = await setup();
+      // Like a person in an extension wallet: `__JUNO_WALLET.reject = true`
+      // declines every signature and transaction (EIP-1193 code 4001), and
+      // `__JUNO_WALLET.disconnect()` revokes the site's accounts.
+      if (cfg.reject && (method === "personal_sign" || method === "eth_sendTransaction" || method === "eth_requestAccounts")) {
+        throw Object.assign(new Error("User rejected the request."), { code: 4001 });
+      }
       switch (method) {
         // Like an extension wallet: no accounts for a site until it asks and
         // is approved (here, approved at once), remembered for the session.

@@ -115,11 +115,6 @@ function usePrivyWebBridge(): PrivyBridge {
           ? "not-created"
           : "none";
 
-  useEffect(() => {
-    if (!ready) return;
-    console.info(`[juno:privy] user=${signedIn ? "yes" : "no"} wallet=${walletStatus} wallets=${wallets.length}`);
-  }, [ready, signedIn, walletStatus, wallets.length]);
-
   // `createOnLogin` covers a new sign-in. A user who signed in before the
   // wallet existed comes back with none, so make one — after giving
   // `createOnLogin` its chance: two creates at once is an error.

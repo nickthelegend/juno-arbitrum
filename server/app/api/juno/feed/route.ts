@@ -107,6 +107,8 @@ export async function GET(request: Request) {
     for (const post of posts) {
       if (allowed && !allowed.has(post.authorWallet)) continue;
       const row = post.token ? byToken.get(post.token) : undefined;
+      // A post about a coin taken off the listings goes with it, as its trades do.
+      if (row && !row.listed) continue;
       const coin = row ? live.get(row.token) : undefined;
       items.push({
         kind: "post",

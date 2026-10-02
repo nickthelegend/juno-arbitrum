@@ -151,8 +151,8 @@ bash scripts/localnet/up.sh                       # node + DBs (127.0.0.1), infr
                                                   # run again after a reboot to restore (no redeploy)
 bash scripts/localnet/up.sh --fresh               # a new chain and empty local databases
 (cd scripts && npx tsx localnet/trackers.ts)      # TSLA / NVDA / AAPL trackers
-(cd server && set -a && . ./.env.localnet && set +a && npx next dev --port 3111)
-(cd app && EXPO_PUBLIC_API_URL=http://localhost:3111 EXPO_PUBLIC_CHAIN_ID=412346 \
+(cd server && set -a && . ./.env.localnet && set +a && npx next dev --port 3131)
+(cd app && EXPO_PUBLIC_API_URL=http://localhost:3131 EXPO_PUBLIC_CHAIN_ID=412346 \
   EXPO_PUBLIC_RPC_URL=http://localhost:8747 EXPO_PUBLIC_WALLET=injected \
   npx expo export --platform web --output-dir dist-local && npx serve -s dist-local -l 8091)
 node scripts/localnet/e2e.mjs                     # L1-L16 through the UI (docs/TEST-PLAN.md)

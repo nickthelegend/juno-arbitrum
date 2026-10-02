@@ -1,16 +1,25 @@
 import { addressList } from "@/lib/juno/address";
 import { junoHandler, junoJson, junoOptions, readJson, requireString } from "@/lib/juno/api";
 import { chainIdFromUrl, resolveChainId } from "@/lib/juno/chains";
-import { claimName, namesFor } from "@/lib/juno/profiles";
+import { claimName, namesFor, nameStatus } from "@/lib/juno/profiles";
+import { maybeAddress } from "@/lib/juno/address";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const OPTIONS = junoOptions;
 
-/** `GET ?wallets=a,b,c` — names for up to 100 wallets. Wallets without one are absent. */
+/**
+ * `GET ?wallets=a,b,c` — names for up to 100 wallets. Wallets without one are absent.
+ * `GET ?name=foo[&wallet=0x…]` — whether that name can be claimed:
+ * `{ name, available, reason: "taken" | "reserved" | "invalid" | null }`.
+ */
 export async function GET(request: Request) {
   return junoHandler(async () => {
     const url = new URL(request.url);
+    const name = url.searchParams.get("name");
+    if (name !== null) {
+      return junoJson(await nameStatus(chainIdFromUrl(url), name, maybeAddress(url.searchParams.get("wallet")) ?? null));
+    }
     const wallets = addressList(url.searchParams.get("wallets"), "wallets", 100);
     return junoJson({ names: await namesFor(wallets, chainIdFromUrl(url)) });
   });

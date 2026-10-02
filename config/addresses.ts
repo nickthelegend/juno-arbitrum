@@ -78,7 +78,7 @@ export const ADDRESSES: Record<number, ChainAddresses> = {
     factoryBlock: 10,
     multicall3: "0xc4db17cb5928d8a4e06625f40644dab8f12c7022",
     name: "Arbitrum Local",
-    explorer: "http://localhost:3111/api/explorer",
+    explorer: "http://localhost:3131/api/explorer",
     factory: "0x293c9eDBB475150D5f1B93E1F9A303c61F4Ad685",
     curveImpl: "0x40f09Ba1ee24FE42095d9c04c141b953bFdA8f18",
     curveMath: "0x0afe4b5763813083d487b30215bdd21012c172ab",

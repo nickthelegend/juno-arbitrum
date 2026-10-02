@@ -2,7 +2,7 @@ import "server-only";
 
 import { CallerError } from "./api";
 import { publicClient, type ChainId } from "./chains";
-import { verifyNameClaim, type NameClaim } from "./names";
+import { NAME, RESERVED, verifyNameClaim, type NameClaim } from "./names";
 import { db, ensureIndexes } from "./social";
 
 /**
@@ -44,4 +44,23 @@ export async function claimName(chainId: ChainId, claim: NameClaim): Promise<{ w
     throw error;
   }
   return { wallet: verified.wallet, name: verified.name };
+}
+
+/**
+ * Whether `name` can be claimed by `wallet` on this chain, read before asking
+ * the wallet to sign: the editor says "taken" while you type rather than after
+ * a signature and a refused request. A wallet's own current name is available
+ * to it. A race between two claims is still settled by the unique index.
+ */
+export async function nameStatus(
+  chainId: ChainId,
+  name: string,
+  wallet: string | null,
+): Promise<{ name: string; available: boolean; reason: "taken" | "reserved" | "invalid" | null }> {
+  const key = name.trim().toLowerCase();
+  if (!NAME.test(key)) return { name: key, available: false, reason: "invalid" };
+  if (RESERVED.has(key)) return { name: key, available: false, reason: "reserved" };
+  const holder = await (await profiles()).findOne({ chainId, nameKey: key }, { projection: { wallet: 1 } });
+  const available = !holder || (wallet !== null && holder.wallet === wallet.toLowerCase());
+  return { name: key, available, reason: available ? null : "taken" };
 }

@@ -2,7 +2,7 @@
  * End-to-end on the local Nitro node, through the web app in a real Chromium
  * with a real (injected) wallet: every step is a UI action, checked against
  * the chain and the API afterwards. `node scripts/localnet/e2e.mjs [stage]`.
- * Needs: scripts/localnet/up.sh, the local API (:3111), the local web (:8091).
+ * Needs: scripts/localnet/up.sh, the local API (:3131), the local web (:8091).
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -14,7 +14,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = process.env.JUNO_LOCAL_APP ?? "http://localhost:8091";
-const API = process.env.JUNO_LOCAL_API ?? "http://localhost:3111";
+const API = process.env.JUNO_LOCAL_API ?? "http://localhost:3131";
 const RPC = process.env.ARB_LOCAL_RPC ?? "http://localhost:8747";
 const CHAIN_ID = 412346;
 const STATE = join(HERE, "..", "..", ".juno", "localnet-e2e.json");
@@ -594,7 +594,140 @@ async function mediaStage() {
   await browser.close();
 }
 
-const stages = { wallet: walletStage, launch: launchStage, trade: tradeStage, trackers: trackerStage, graduate: graduateStage, social: socialStage, media: mediaStage };
+// ---------------- stage: edges (L17-L26: what a careless user or a harsh judge would do)
+const TRADE_TOPIC = "0x0c668488dc690d00c35c03638df49a1c8a7b63511eba0f88eeed1bd471719b16";
+async function tradesBy(curve, trader) {
+  const logs = await chain.getLogs({ address: curve, fromBlock: 0n, toBlock: "latest" });
+  return logs.filter((l) => l.topics[0] === TRADE_TOPIC && `0x${l.topics[1].slice(26)}` === trader).length;
+}
+const setWallet = (page, patch) => page.evaluate((p) => Object.assign(window.__JUNO_WALLET, p), patch);
+
+async function edgeStage() {
+  const coins = (await getJson("/api/juno/coins?limit=60")).coins;
+  const coin = coins.find((c) => c.symbol === "FALLS") ?? coins.find((c) => !c.nav && !c.curve.graduated);
+  if (!coin) throw new Error("seed the local demo first (scripts/localnet/demo.sh)");
+  const { browser, page, errors, address } = await open("edgar");
+  await signIn(page);
+  await fundWallet(page, address);
+
+  // L17 a rejected trade: nothing sent, the sheet is back where it was, no error text; then it works.
+  await page.goto(`${APP}/coin/${coin.address}`, { waitUntil: "domcontentloaded" });
+  await waitFor(page, coin.name, 20000);
+  const before = await tradesBy(coin.pool, address);
+  await setWallet(page, { reject: true });
+  await sheetButton(page, "Buy").last().click();
+  await page.waitForTimeout(1200);
+  await keypad(page, "0.001");
+  await waitFor(page, "You'll receive", 20000);
+  await sheetButton(page, "Buy").last().click();
+  await page.waitForTimeout(4000);
+  const afterReject = await tradesBy(coin.pool, address);
+  const sheetText = await text(page);
+  const backToEntry = sheetText.includes("You'll receive") && (await sheetButton(page, "Buy").last().isEnabled());
+  check("L17 a declined trade sends nothing and leaves the sheet ready to retry, with no error shown", afterReject === before && backToEntry && !/error|failed/i.test(sheetText.slice(sheetText.indexOf("Price impact"), sheetText.indexOf("Price impact") + 300)), { before, afterReject, backToEntry });
+  await setWallet(page, { reject: false });
+
+  // L18 the retry, double-clicked: exactly one trade.
+  const buy = sheetButton(page, "Buy").last();
+  await buy.click();
+  await buy.click({ force: true }).catch(() => {});
+  const done = await waitFor(page, "Done", 90000);
+  await page.waitForTimeout(3000);
+  const afterDouble = await tradesBy(coin.pool, address);
+  check("L18 retry after a decline works, and a double-click makes one trade", done && afterDouble === before + 1, { before, afterDouble });
+  await tap(page, "Done", { last: true });
+
+  // L19 refresh mid-transaction: the trade still lands and is listed after the reload.
+  await sheetButton(page, "Buy").last().click();
+  await page.waitForTimeout(1200);
+  await keypad(page, "0.001");
+  await waitFor(page, "You'll receive", 20000);
+  const sending = await tradesBy(coin.pool, address);
+  await sheetButton(page, "Buy").last().click();
+  await page.waitForTimeout(400);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  let landed = sending;
+  for (let i = 0; i < 30 && landed === sending; i++) { await page.waitForTimeout(1000); landed = await tradesBy(coin.pool, address); }
+  let listed = false;
+  for (let i = 0; i < 20 && !listed; i++) {
+    const activity = (await coinDetail(coin.address)).activity ?? [];
+    listed = activity.filter((a) => (a.wallet ?? a.trader ?? "").toLowerCase() === address).length >= landed - before;
+    if (!listed) await new Promise((r) => setTimeout(r, 1500));
+  }
+  check("L19 a reload mid-trade: the trade lands on-chain and the API lists it (indexed on read)", landed === sending + 1 && listed, { sending, landed, listed });
+
+  // L20 a declined signature on a like: no like stored, the heart is not left on.
+  const fresh = await open("edna");
+  await signIn(fresh.page);
+  await fresh.page.goto(`${APP}/social`, { waitUntil: "domcontentloaded" });
+  await waitFor(fresh.page, coin.name, 20000);
+  await setWallet(fresh.page, { reject: true });
+  const card = fresh.page.getByText(coin.name, { exact: false }).locator("visible=true").first().locator("xpath=ancestor::div[.//*[@aria-label='Like' or @aria-label='Unlike']][1]");
+  await card.locator("[aria-label='Like']").first().click();
+  await fresh.page.waitForTimeout(3000);
+  const likes = (await getJson(`/api/juno/likes?coins=${coin.address}&viewer=${fresh.address}`)).counts?.[coin.address];
+  const heartOn = (await card.locator("[aria-label='Unlike']").count()) > 0;
+  check("L20 a declined signature: no like stored and the heart is not left on", likes?.viewerLiked !== true && !heartOn, { viewerLiked: likes?.viewerLiked, heartOn });
+
+  // L21 disconnect in the wallet: the app signs out.
+  await fresh.page.goto(`${APP}/profile`, { waitUntil: "domcontentloaded" });
+  await waitFor(fresh.page, fresh.address.slice(0, 6), 15000);
+  await fresh.page.evaluate(() => window.__JUNO_WALLET.disconnect());
+  const signedOut = await waitFor(fresh.page, "No wallet yet", 10000);
+  check("L21 disconnecting in the wallet signs the app out", signedOut, signedOut);
+  check("L20-L21 console/network clean", fresh.errors.length === 0, fresh.errors);
+  await fresh.browser.close();
+
+  // L22 forms validate before submitting: launch without media, names too short or taken, empty reply.
+  await page.goto(`${APP}/post`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1500);
+  const launchDisabled = await sheetButton(page, "Launch post").last().isDisabled();
+  const hint = await text(page);
+  await page.goto(`${APP}/profile`, { waitUntil: "domcontentloaded" });
+  await waitFor(page, "Choose a name", 15000);
+  await tap(page, "Choose a name", { last: true });
+  await page.getByPlaceholder("yourname").fill("ab");
+  const saveShort = await sheetButton(page, "Save").last().isDisabled();
+  await page.getByPlaceholder("yourname").fill("demo_kai");
+  const taken = await waitFor(page, "That name is taken.", 15000);
+  const saveTaken = await sheetButton(page, "Save").last().isDisabled();
+  await page.getByPlaceholder("yourname").fill("admin");
+  const reserved = await waitFor(page, "That name is reserved.", 15000);
+  await page.getByPlaceholder("yourname").fill(`edgar_${address.slice(2, 6)}`);
+  let saveFree = false;
+  for (let i = 0; i < 20 && !saveFree; i++) { await page.waitForTimeout(300); saveFree = await sheetButton(page, "Save").last().isEnabled(); }
+  const named = (await getJson(`/api/juno/profiles?wallets=${address}`)).names?.[address];
+  check("L22 forms check before submitting: launch needs media (says so), a 2-letter name, a taken or reserved name cannot be saved (said while typing), a free one can", launchDisabled && /Add a photo/i.test(hint) && saveShort && taken && saveTaken && reserved && saveFree && named !== "demo_kai", { launchDisabled, saveShort, taken, saveTaken, reserved, saveFree });
+  await sheetButton(page, "Cancel").last().click();
+
+  // L23 back mid-flow: open the sheet, type, go back; the app is still usable.
+  await page.goto(`${APP}/coin/${coin.address}`, { waitUntil: "domcontentloaded" });
+  await waitFor(page, coin.name, 20000);
+  await sheetButton(page, "Buy").last().click();
+  await page.waitForTimeout(1000);
+  await keypad(page, "0.5");
+  await page.goBack({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2000);
+  await page.goto(`${APP}/social`, { waitUntil: "domcontentloaded" });
+  const usable = await waitFor(page, coin.name, 20000);
+  check("L23 back mid-trade leaves nothing stuck: the app navigates on", usable, usable);
+  check("L17-L23 console/network clean", errors.length === 0, errors);
+  await browser.close();
+
+  // L24 wide screens: no sideways scroll on the feed, a coin, trade and profile at desktop width.
+  const wide = await chromium.launch({ executablePath: join(homedir(), "Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell") });
+  const desk = await (await wide.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  const overflow = {};
+  for (const path of ["/social", `/coin/${coin.address}`, "/trade", "/profile", "/reels"]) {
+    await desk.goto(`${APP}${path}`, { waitUntil: "domcontentloaded" });
+    await desk.waitForTimeout(1500);
+    overflow[path] = await desk.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  }
+  check("L24 desktop width: nothing scrolls sideways", Object.values(overflow).every((o) => o <= 0), overflow);
+  await wide.close();
+}
+
+const stages = { wallet: walletStage, launch: launchStage, trade: tradeStage, trackers: trackerStage, graduate: graduateStage, social: socialStage, media: mediaStage, edges: edgeStage };
 const only = process.argv[2];
 for (const [name, run] of Object.entries(stages)) if (!only || only === name) await run();
 console.log(failures ? `\n${failures} FAILED` : "\nall local items pass");

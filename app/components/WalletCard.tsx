@@ -1,5 +1,5 @@
 import * as Clipboard from "expo-clipboard";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Linking, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { Tappable } from "./Press";
@@ -204,7 +204,33 @@ function NameEditor({ address }: { address: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const cleaned = draft.trim().toLowerCase();
-  const valid = /^[a-z0-9_]{3,20}$/.test(cleaned);
+  const wellFormed = /^[a-z0-9_]{3,20}$/.test(cleaned);
+
+  // Asked while typing, so a taken or reserved name is said before the wallet
+  // is asked to sign anything (the server still settles a race on save).
+  const [status, setStatus] = useState<{ name: string; available: boolean; reason: string | null } | null>(null);
+  useEffect(() => {
+    setStatus(null);
+    if (!editing || !wellFormed || cleaned === current?.toLowerCase()) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      api
+        .get<{ name: string; available: boolean; reason: string | null }>(
+          `/api/juno/profiles?name=${encodeURIComponent(cleaned)}&wallet=${address.toLowerCase()}`,
+        )
+        .then((answer) => {
+          if (live) setStatus(answer);
+        })
+        .catch(() => undefined);
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [cleaned, wellFormed, editing, current, address]);
+  const unavailable = status?.name === cleaned && !status.available ? status.reason : null;
+  const checked = cleaned === current?.toLowerCase() || (status?.name === cleaned && status.available);
+  const valid = wellFormed && checked;
 
   const save = async () => {
     if (!valid || saving) return;
@@ -274,8 +300,15 @@ function NameEditor({ address }: { address: string }) {
           onSubmitEditing={() => void save()}
         />
       </View>
-      <Text style={[styles.hint, error ? { color: theme.colors.neg } : null]}>
-        {error ?? (draft && !valid ? "3–20 letters, digits or underscores." : "Your wallet signs to claim it. Free, no transaction.")}
+      <Text style={[styles.hint, error || unavailable ? { color: theme.colors.neg } : null]}>
+        {error ??
+          (draft && !wellFormed
+            ? "3–20 letters, digits or underscores."
+            : unavailable === "taken"
+              ? "That name is taken."
+              : unavailable === "reserved"
+                ? "That name is reserved."
+                : "Your wallet signs to claim it. Free, no transaction.")}
       </Text>
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Button label="Cancel" variant="quiet" onPress={() => setEditing(false)} style={{ flex: 1 }} />

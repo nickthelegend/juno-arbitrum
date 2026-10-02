@@ -172,10 +172,8 @@ async function attempt<T>(
       timedOut.timedOut = true;
       throw timedOut;
     }
-    throw new ApiError(
-      `Could not reach Juno at ${API_URL}. Is the server running?`,
-      0,
-    );
+    // Said to whoever is holding the phone: no hostnames, no "server".
+    throw new ApiError("Juno can't be reached right now. Check your connection and try again.", 0);
   } finally {
     clearTimeout(timer);
   }

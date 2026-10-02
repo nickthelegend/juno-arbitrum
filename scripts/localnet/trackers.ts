@@ -11,7 +11,7 @@ import { junoFactoryAbi } from "../../config/abi";
 import { LOCAL_CHAIN_ID, TRACKER_MAX_AGE_SECONDS } from "../../config/addresses";
 import { aggregatorAbi, clients } from "../lib";
 
-const API = process.env.JUNO_LOCAL_API ?? "http://localhost:3111";
+const API = process.env.JUNO_LOCAL_API ?? "http://localhost:3131";
 const { publicClient, walletClient, account, addresses } = clients(LOCAL_CHAIN_ID);
 const STOCKS = [
   { symbol: "TSLA", name: "Tesla" },

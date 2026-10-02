@@ -16,7 +16,7 @@ the public page).
 | Pitch deck | [link — export the Slides artifact as PDF] |
 | Contracts (Sepolia) | Stylus CurveMath `0x5125c9E14B64aCd48Bf7116A93c9B66DF89A4F37` · JunoFactory `0xBc89E74A36a9EFf7B938211ea4B82650DA3BE87a` · JunoCurve impl `0x3a4A8c33D8a3BacA2B58d608107a6E1Aa2B9A9F1` (Solidity verified on Sourcify; Stylus rebuilt byte for byte) |
 | Contracts (Arbitrum One) | Not deployed: no mainnet ETH. Fork-tested against the real Chainlink feeds, Circle USDC and Uniswap v3; deploying is one command (`CHAIN=one bash scripts/deploy.sh`, about 0.005 ETH) |
-| Builds | https://github.com/nickthelegend/juno-arbitrum/releases/tag/v0.2.0 (Android APK, iOS Simulator build) |
+| Builds | https://github.com/nickthelegend/juno-arbitrum/releases/tag/v0.2.1 (Android APK, iOS Simulator build) |
 
 ## What's built on Arbitrum
 - **Stylus** `CurveMath` (Rust→WASM) prices every trade; Solidity `JunoCurve`

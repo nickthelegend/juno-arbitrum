@@ -17,7 +17,7 @@ Built for **Arbitrum Open House Singapore** (online buildathon, Sep 14 – Oct 4
 
 | | |
 |---|---|
-| **Try it** | **https://juno-arb-app.vercel.app** · Android APK + iOS Simulator build in [release v0.2.0](https://github.com/nickthelegend/juno-arbitrum/releases/tag/v0.2.0) |
+| **Try it** | **https://juno-arb-app.vercel.app** · Android APK + iOS Simulator build in [release v0.2.1](https://github.com/nickthelegend/juno-arbitrum/releases/tag/v0.2.1) |
 | **Demo film** | [juno-arbitrum-film-1080p.mp4](https://github.com/nickthelegend/juno-arbitrum/releases/download/v0.1.0/juno-arbitrum-film-1080p.mp4) (2:36): every shot is the live app on Arbitrum Sepolia or real proof-script output ([how it's made](docs/FILM.md)) |
 | **Network** | Arbitrum Sepolia: live and seeded (test ETH from Profile → *Get test ETH*). Arbitrum One: [ready to deploy, not deployed yet](#arbitrum-one). |
 | **API** | https://juno-arb-api.vercel.app/api/health |

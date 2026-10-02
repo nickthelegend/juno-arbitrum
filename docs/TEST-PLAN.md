@@ -359,3 +359,31 @@ Found and fixed:
 | up.sh | a new database container's port came up after its own ping | retries the database setup |
 
 Still the user's to run: the Arbitrum One deploy and proof (real ETH).
+
+## O. Pre-judging audit (2–3 Oct 2026)
+
+Nothing was spent on these checks. Signed-in flows ran on the local chain;
+on live Sepolia only signatures, quotes and builds (nothing sent).
+
+| ID | Item | Result |
+|---|---|---|
+| L17 | Declined trade (wallet rejects, EIP-1193 4001) | PASS: nothing sent, sheet back to entry, no error text |
+| L18 | Retry after the decline, double-clicked | PASS: exactly one trade |
+| L19 | Reload mid-trade | PASS: the trade lands and is listed after the reload (indexed on read) |
+| L20 | Declined signature on a like | PASS: no like stored, heart not left on |
+| L21 | Disconnect in the wallet | PASS: the app signs out |
+| L22 | Forms: launch without media, 2-letter name, taken or reserved name, free name | FAIL → PASS: a taken name was a 400 after signing; it is now said while typing and Save stays disabled |
+| L23 | Back mid-trade | PASS |
+| L24 | Desktop 1440 px, no sideways scroll on five pages | PASS |
+| L25 | API down, then back: feed error, then "Try again" (real Chrome) | FAIL → PASS: the message named the server URL and asked "Is the server running?"; now it is written for users |
+| O1 | Live visitor pages (E1–E13) | PASS: zero console errors (the reels page's one cancelled request is Chrome's own preload of the next reel) |
+| O2 | Live API battery, sign-and-build only (`scripts/e2e-api.ts`) | PASS 36/36, after the battery was made state-independent |
+| O3 | Live sign-in: empty and invalid email | PASS: "Send code" stays disabled |
+| O4 | 320 px and 768 px, seven pages | FAIL → PASS: the stock card cut the price to "$332…"; stats size to the screen now, and coin band labels wrap |
+| O5 | Debug output | FAIL → PASS: a `[juno:privy]` log printed on every visit (web) and every wallet change (native); removed, except real wallet errors |
+| O6 | Test data a judge would see | FAIL → PASS: "Smoke Test" and the first "Graduation Test" were in the feed. They are unlisted with `scripts/list-coin.ts` (still on-chain, and reachable by link); the feed, markets, stocks and leaderboard respect the flag |
+
+Note: rebalancing jTSLA back into its band (section N) filled its curve and
+it graduated into Uniswap v3. Tesla now trades on its pool; NVIDIA and Apple
+are on their curves within the band. A fresh TSLA tracker would cost about
+0.0003 Sepolia ETH.

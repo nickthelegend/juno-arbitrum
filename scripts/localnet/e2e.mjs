@@ -728,6 +728,14 @@ async function edgeStage() {
 }
 
 const stages = { wallet: walletStage, launch: launchStage, trade: tradeStage, trackers: trackerStage, graduate: graduateStage, social: socialStage, media: mediaStage, edges: edgeStage };
+// Preflight: a stack trace from the first page load says less than this.
+for (const [what, url] of [["web app", APP], ["API", `${API}/api/health`]]) {
+  const ok = await fetch(url).then((r) => r.ok).catch(() => false);
+  if (!ok) {
+    console.error(`the local ${what} is not answering at ${url} (start it: scripts/localnet/demo.sh)`);
+    process.exit(2);
+  }
+}
 const only = process.argv[2];
 for (const [name, run] of Object.entries(stages)) if (!only || only === name) await run();
 console.log(failures ? `\n${failures} FAILED` : "\nall local items pass");

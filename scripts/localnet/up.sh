@@ -15,6 +15,16 @@
 # the rows written after it.
 set -euo pipefail
 FRESH=0; [ "${1:-}" = "--fresh" ] && FRESH=1
+
+# One at a time: two runs against the same node race for the deployer's nonce
+# and leave a half-built chain. (A directory, since macOS has no flock.)
+LOCK="${TMPDIR:-/tmp}/juno-localnet-up.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  echo "another up.sh is running (lock $LOCK); if it is not, remove that directory"
+  exit 1
+fi
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 set -a; source "$ROOT/.env"; set +a
 export ARB_LOCAL_RPC="${ARB_LOCAL_RPC:-http://localhost:8747}"

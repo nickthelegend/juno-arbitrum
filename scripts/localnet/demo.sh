@@ -11,6 +11,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 LOG="${TMPDIR:-/tmp}/juno-local-api.log"
 
+# One at a time: two runs against the same node race for the deployer's nonce
+# and leave a half-built chain. (A directory, since macOS has no flock.)
+LOCK="${TMPDIR:-/tmp}/juno-localnet-demo.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  echo "another demo.sh is running (lock $LOCK); if it is not, remove that directory"
+  exit 1
+fi
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+
+
 # Stop the local API by its port: `next dev` leaves its worker process behind
 # when only the launcher is killed. (3131: other tools here use 3100/3111.)
 lsof -tiTCP:3131 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null || true
@@ -34,6 +44,9 @@ rm -f "$ROOT"/.juno/demo-arb/progress-412346-*.json
   scripts/demo-activity.ts --chain 412346 --api http://localhost:3131 --fund 0.2)
 
 if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8091/)" != 200 ]; then
-  (cd "$ROOT/app" && nohup npx --yes serve@14 -s dist-local -l 8091 >/dev/null 2>&1 &)
+  (cd "$ROOT/app" && nohup npx --yes serve@14 -s dist-local -l 8091 >"${TMPDIR:-/tmp}/juno-local-web.log" 2>&1 &)
+  # Wait for it: whatever runs next (a test, a browser) needs it listening.
+  for _ in $(seq 1 30); do [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8091/)" = 200 ] && break; sleep 1; done
 fi
+[ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8091/)" = 200 ] || { echo "the local web did not start on :8091"; exit 1; }
 echo "demo ready: http://localhost:8091"

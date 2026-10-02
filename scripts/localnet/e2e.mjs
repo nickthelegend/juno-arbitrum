@@ -33,7 +33,7 @@ export function check(id, ok, detail) {
 }
 
 /** A browser with the wallet of `who` (a key kept in the state file). */
-export async function open(who, { chrome = false } = {}) {
+export async function open(who, { chrome = false, wallet = true } = {}) {
   state.keys ??= {};
   state.keys[who] ??= generatePrivateKey();
   save();
@@ -44,7 +44,8 @@ export async function open(who, { chrome = false } = {}) {
       : { executablePath: process.env.JUNO_CHROMIUM ?? join(homedir(), "Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell") },
   );
   const context = await browser.newContext({ ...devices["iPhone 15 Pro"], viewport: { width: 393, height: 852 } });
-  await context.addInitScript({ content: `window.__JUNO_WALLET = ${JSON.stringify({ key: state.keys[who], rpc: RPC, chainId: CHAIN_ID })};\n${readFileSync(join(HERE, "wallet.js"), "utf8")}` });
+  // A visitor has no wallet (and the live site's CSP rightly refuses the test wallet's import).
+  if (wallet) await context.addInitScript({ content: `window.__JUNO_WALLET = ${JSON.stringify({ key: state.keys[who], rpc: RPC, chainId: CHAIN_ID })};\n${readFileSync(join(HERE, "wallet.js"), "utf8")}` });
   const page = await context.newPage();
   const errors = [];
   page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 200)));
@@ -560,7 +561,7 @@ async function socialStage() {
 
 // ---------------- stage: media (L16 reels show their poster while loading, then play)
 async function mediaStage() {
-  const { browser, page, errors } = await open("visitor", { chrome: true });
+  const { browser, page, errors } = await open("visitor", { chrome: true, wallet: false });
   await page.goto(`${APP}/reels`, { waitUntil: "domcontentloaded" });
   // Poster opacity over the first reel, sampled until its video has frames.
   const sample = () =>

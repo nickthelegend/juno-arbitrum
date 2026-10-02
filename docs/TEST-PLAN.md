@@ -312,3 +312,50 @@ Not testable here, and why:
   was typechecked. The APK and iOS builds need a rebuild to carry these fixes.
 - **Arbitrum Sepolia and One:** deferred until deployment. The deployer has no
   test ETH, and mainnet is the user's to fund and run.
+
+## N. Demo polish and the live Sepolia demo (1–2 Oct 2026)
+
+The fixes from L and M were deployed to the live API and web app. The app
+builds were rebuilt and published as release v0.2.0. The iOS build was
+started on a simulator against the live API, and it reaches the live feed.
+Then the user funded the deployer with 0.15 Sepolia ETH, and the live demo
+was seeded for real through the production API (`demo-activity.ts --chain
+421614 --funder deployer --fund 0.008`):
+
+- five named creators;
+- six posts and reels (Pexels media on IPFS), each with its caption posted as
+  the creator's first post;
+- NVDA and AAPL trackers (the existing TSLA one adopted, not duplicated);
+- 28 trades with notes;
+- "Graduation Day" filled and graduated into Uniswap v3;
+- comments, likes and follows;
+- every media file warmed through `/api/ipfs`.
+
+Cost on Sepolia: 55 transactions, 63.1M gas = 0.0026 ETH in fees, plus
+0.0167 ETH of buys. Then:
+
+- the keeper got 0.005 ETH, so the stock prices keep mirroring Arbitrum One;
+- jTSLA, left 4.6% under Tesla after TSLA moved, was bought back inside its
+  band in six 3,000 USDC buys (now −0.95%);
+- the faucet got 0.1 ETH (five 0.02 drips for judges).
+
+| ID | Item | Result |
+|---|---|---|
+| N1 | Live visitor pages (E1–E13) after seeding | PASS: zero console errors. The one `ERR_ABORTED` was the check closing the page while the second reel was still loading |
+| N2 | Live reels: poster while loading, then plays (Google Chrome) | PASS (L16 against the live site) |
+| N3 | Live feed, Trade tab, a reel's coin page in real Chrome | PASS: content, three trackers within 1%, poster shown, zero console errors, all 200 |
+| N4 | Live faucet status | PASS: `empty: false`, eligible |
+| N5 | iOS v0.2.0 build on the simulator against the live API | PASS: onboarding, then the feed with names |
+| N6 | Local regression, fresh wallets | PASS 43/43 (L1–L16) |
+
+Found and fixed:
+
+| Where | Problem | Fix |
+|---|---|---|
+| reels | a loading reel showed black: the poster faded on expo-video's "playing", which the web reports when play() is asked for, before any frame | the poster lifts on the first time update past 0 |
+| IPFS route | the public gateways take about 6 s to first byte (or answer 429), and nothing was kept between requests | each object is kept in a content-addressed temp file; Range, suffix ranges and 416 are served from it |
+| demo seed | Sepolia only; a second jTSLA beside the first; no caption posts; GRAD repeated The Falls' photo | `--chain`, adopts existing trackers, posts captions, GRAD has its own photo, warms the media, prints the cost |
+| deploy-api.sh | moved aside only `.env.local` (its guard refused to ship `.env.localnet`) | moves aside every `server/.env*` except the example |
+| up.sh | a new database container's port came up after its own ping | retries the database setup |
+
+Still the user's to run: the Arbitrum One deploy and proof (real ETH).

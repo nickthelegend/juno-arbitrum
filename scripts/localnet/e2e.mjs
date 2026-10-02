@@ -33,13 +33,16 @@ export function check(id, ok, detail) {
 }
 
 /** A browser with the wallet of `who` (a key kept in the state file). */
-export async function open(who) {
+export async function open(who, { chrome = false } = {}) {
   state.keys ??= {};
   state.keys[who] ??= generatePrivateKey();
   save();
-  const browser = await chromium.launch({
-    executablePath: process.env.JUNO_CHROMIUM ?? join(homedir(), "Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell"),
-  });
+  // Google Chrome for media: Chromium builds have no H.264, and the reels are MP4.
+  const browser = await chromium.launch(
+    chrome
+      ? { channel: "chrome", headless: true }
+      : { executablePath: process.env.JUNO_CHROMIUM ?? join(homedir(), "Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell") },
+  );
   const context = await browser.newContext({ ...devices["iPhone 15 Pro"], viewport: { width: 393, height: 852 } });
   await context.addInitScript({ content: `window.__JUNO_WALLET = ${JSON.stringify({ key: state.keys[who], rpc: RPC, chainId: CHAIN_ID })};\n${readFileSync(join(HERE, "wallet.js"), "utf8")}` });
   const page = await context.newPage();
@@ -555,7 +558,42 @@ async function socialStage() {
   await viewer.browser.close();
 }
 
-const stages = { wallet: walletStage, launch: launchStage, trade: tradeStage, trackers: trackerStage, graduate: graduateStage, social: socialStage };
+// ---------------- stage: media (L16 reels show their poster while loading, then play)
+async function mediaStage() {
+  const { browser, page, errors } = await open("visitor", { chrome: true });
+  await page.goto(`${APP}/reels`, { waitUntil: "domcontentloaded" });
+  // Poster opacity over the first reel, sampled until its video has frames.
+  const sample = () =>
+    page.evaluate(() => {
+      const video = document.querySelector("video");
+      if (!video) return null;
+      const box = video.getBoundingClientRect();
+      // React Native Web paints an <Image> as a div's background-image (its
+      // <img> is a hidden accessibility copy), so the cover is that div.
+      const covers = [...document.querySelectorAll("div")].filter((el) => {
+        if (!/url\(/.test(getComputedStyle(el).backgroundImage)) return false;
+        const r = el.getBoundingClientRect();
+        return Math.abs(r.width - box.width) < 2 && Math.abs(r.height - box.height) < 2 && Math.abs(r.top - box.top) < 2;
+      });
+      const opacity = (el) => { let o = 1; for (let n = el; n && n !== document.body; n = n.parentElement) o *= parseFloat(getComputedStyle(n).opacity); return o; };
+      return { t: video.currentTime, ready: video.readyState, poster: covers.length ? Math.max(...covers.map(opacity)) : null };
+    });
+  let first = null, playing = null;
+  for (let i = 0; i < 80; i++) {
+    const s = await sample();
+    if (s && first === null) first = s;
+    if (s && s.t > 0.5) { playing = s; break; }
+    await page.waitForTimeout(500);
+  }
+  await page.waitForTimeout(600);
+  const after = await sample();
+  check("L16 the first reel shows its poster before it has frames", first !== null && (first.ready > 2 || (first.poster ?? 0) > 0.9), first);
+  check("L16 the reel plays (the playhead moves) and the poster lifts", !!playing && (after?.poster ?? 0) < 0.1, { playing, after });
+  check("L16 console/network clean", errors.length === 0, errors);
+  await browser.close();
+}
+
+const stages = { wallet: walletStage, launch: launchStage, trade: tradeStage, trackers: trackerStage, graduate: graduateStage, social: socialStage, media: mediaStage };
 const only = process.argv[2];
 for (const [name, run] of Object.entries(stages)) if (!only || only === name) await run();
 console.log(failures ? `\n${failures} FAILED` : "\nall local items pass");

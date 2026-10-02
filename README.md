@@ -149,7 +149,8 @@ bash scripts/localnet/up.sh --fresh               # a new chain and empty local 
 (cd app && EXPO_PUBLIC_API_URL=http://localhost:3111 EXPO_PUBLIC_CHAIN_ID=412346 \
   EXPO_PUBLIC_RPC_URL=http://localhost:8747 EXPO_PUBLIC_WALLET=injected \
   npx expo export --platform web --output-dir dist-local && npx serve -s dist-local -l 8091)
-node scripts/localnet/e2e.mjs                     # L1-L15 through the UI (docs/TEST-PLAN.md)
+node scripts/localnet/e2e.mjs                     # L1-L16 through the UI (docs/TEST-PLAN.md)
+bash scripts/localnet/demo.sh                     # a clean, seeded demo: creators, posts, reels, trades, a graduation
 ```
 
 See [`server/README.md`](server/README.md) for the API's environment and scripts.

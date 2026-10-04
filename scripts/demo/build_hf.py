@@ -36,7 +36,7 @@ CHAPTERS = [
     ("c04", "phone", "Buy, signed by the wallet", "Quoted against the curve, signed by Privy, confirmed on-chain.",
      ["Server-built transaction", "Signed in the embedded wallet", "Receipt read from the chain"], ["Arbiscan"]),
     ("c05", "phone", "Held to Chainlink", "Stock trackers: a buy past the band is refused by the contract.",
-     ["Approve USDC, then buy", "Price checked against Chainlink on every buy", "More than 1% above: refused before signing"], ["Chainlink"]),
+     ["Approve USDC, then buy", "Price checked against Chainlink on every buy", "The sheet shows what fits in the 1% band"], ["Chainlink"]),
     ("c06", "phone", "Graduation to Uniswap v3", "A filled curve moves its liquidity into a Uniswap v3 pool.",
      ["graduate() is permissionless once full", "Full-range position, locked forever", "Trading on Uniswap now"], ["Uniswap v3"]),
     ("c07", "term", "Curve maths in Stylus", "The pricing engine is a Rust program on Arbitrum Stylus.",

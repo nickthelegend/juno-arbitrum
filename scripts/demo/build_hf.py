@@ -27,37 +27,27 @@ words = {k: json.load(open(f"{VO}/{k}.words.json")) for k in vo}
 INK, LIME, SAGE = "#12150E", "#D6FF3D", "#DCE6D4"
 
 CHAPTERS = [
-    ("c01", "phone", "Every post is a market", "Each post is its own token and bonding curve, launched by one factory call.",
-     ["Token + curve + Uniswap pool in one transaction", "Priced by the Stylus curve maths", "Progress to graduation, live"], ["Arbitrum Sepolia"]),
-    ("c02", "phone", "Creators get paid", "Every trade pays the creator. Only the creator can claim it.",
-     ["Half of every fee accrues to the creator", "claimCreatorFees(), creator only", "Claimed on-chain on Sepolia"], ["Solidity"]),
-    ("c03", "phone", "Held to Chainlink", "Stock trackers, priced in dollars and held to Chainlink.",
-     ["TSLA, NVDA and AAPL feeds", "Price, age and market state", "A Juno curve per stock"], ["Chainlink"]),
-    ("c04", "phone", "The band lives in the contract", "Every buy reads the Chainlink price. The quote says no before you sign.",
-     ["$500: 1.41 jTSLA, 0.31% impact", "$9,500: more than 1% above Tesla", "Refused before signing"], ["Chainlink"]),
-    ("c05", "term", "Refused by the contract", "Not a UI rule: the curve contract reverts it.",
-     ["In-band buy: confirmed on Sepolia", "Big buy: OutsideBand", "Curve price, Chainlink price, band"], ["Solidity", "Chainlink"]),
+    ("c01", "phone", "Every post is a market", "The Juno app on iPhone, live on Arbitrum Sepolia.",
+     ["Each post: its own token and bonding curve", "Price, buyers, progress to graduation", "Reels are coins too"], ["iOS", "Arbitrum Sepolia"]),
+    ("c02", "phone", "A wallet from an email", "Privy creates an Arbitrum wallet. The faucet funds it on-chain.",
+     ["Email sign-in, no seed phrase", "Embedded EVM wallet by Privy", "0.02 test ETH + 1,000 test USDC"], ["Privy"]),
+    ("c03", "phone", "Post it, launch it", "A photo to IPFS, then one factory call: token and curve.",
+     ["Photo and metadata pinned to IPFS", "factory.launch(): token + curve", "Listed in the feed"], ["Solidity", "IPFS"]),
+    ("c04", "phone", "Buy, signed by the wallet", "Quoted against the curve, signed by Privy, confirmed on-chain.",
+     ["Server-built transaction", "Signed in the embedded wallet", "Receipt read from the chain"], ["Arbiscan"]),
+    ("c05", "phone", "Held to Chainlink", "Stock trackers: a buy past the band is refused by the contract.",
+     ["Approve USDC, then buy", "Price checked against Chainlink on every buy", "More than 1% above: refused before signing"], ["Chainlink"]),
     ("c06", "phone", "Graduation to Uniswap v3", "A filled curve moves its liquidity into a Uniswap v3 pool.",
-     ["graduate() is permissionless once full", "Full-range position, locked forever", "Graduated on Sepolia: position #3803"], ["Uniswap v3"]),
+     ["graduate() is permissionless once full", "Full-range position, locked forever", "Trading on Uniswap now"], ["Uniswap v3"]),
     ("c07", "term", "Curve maths in Stylus", "The pricing engine is a Rust program on Arbitrum Stylus.",
      ["Matched a Solidity reference on 720 calls", "Rebuilt from source, byte for byte", "Reproduced in CI"], ["Stylus", "Rust"]),
-    ("c08", "browser", "Verified, end to end", "Every contract verified. Every step, a real transaction.",
-     ["Exact-match source verification", "Factory, curve, tokens, feeds", "All on Arbitrum Sepolia"], ["Blockscout", "Sourcify"]),
-
+    ("c08", "browser", "Real transactions", "Every step is a transaction on Arbitrum Sepolia.",
+     ["The launch, the buy, the tracker buy", "On Arbiscan", "Anyone can check"], ["Arbiscan"]),
 ]
 
 # Real output of the repo's proof scripts (docs/sepolia-proof.log, scripts/diff-curve-math.ts,
 # scripts/stylus-match.sh). Lines starting with "$" are typed; "#" lines are annotations.
 TERMINALS = {
-    "c05": [
-        "$ npx tsx scripts/smoke.ts",
-        "TSLA reference $357.535",
-        "launch TSLA tracker (USDC)   tx 0xcbee770c…c14fef2",
-        "in-band buy $500             tx 0x93b9a914…6cf7d6  ✓",
-        "$9,500 buy refused by the contract:",
-        "  OutsideBand(361672101, 357535000, 100)",
-        "# curve $361.67 · Chainlink $357.54 · band 1%",
-    ],
     "c07": [
         "$ npx tsx scripts/diff-curve-math.ts 120",
         "Stylus CurveMath == CurveMathRef on 720 calls (120 random curves)",
@@ -67,7 +57,7 @@ TERMINALS = {
         "# stylus-verify on a fresh macOS runner: success",
     ],
 }
-BROWSER_URL = {"c08": "arbitrum-sepolia.blockscout.com/address/0xBc89…E87a"}
+BROWSER_URL = {"c08": "sepolia.arbiscan.io/tx/0x208f…71b6"}
 
 LOGO = ('<svg viewBox="0 0 48 48" fill="none"><path d="M9 38.5C9 38.5 18 36.5 24 30C29 24.6 30.5 18.5 30.5 18.5" '
         'stroke="{c}" stroke-width="5" stroke-linecap="round"/><circle cx="36.5" cy="10.5" r="4.8" fill="{c}"/></svg>')

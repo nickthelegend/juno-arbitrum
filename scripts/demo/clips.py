@@ -26,9 +26,9 @@ PAD = 1.8  # seconds of picture around the narration
 # screen, in raw/); browser takes are desktop recordings; a terminal chapter
 # has no clip, only a length.
 CHAPTERS = [
-    ("c01", "phone", ["raw/01-feed"]), ("c02", "phone", ["raw/02-creator"]), ("c03", "phone", ["raw/03-stocks"]),
-    ("c04", "phone", ["raw/04-band"]), ("c05", "term", []), ("c06", "phone", ["raw/06-graduated"]),
-    ("c07", "term", []), ("c08", "browser", ["raw/08-explorer"]),
+    ("c01", "phone", ["raw/ios-c01"]), ("c02", "phone", ["raw/ios-c02"]), ("c03", "phone", ["raw/ios-c03"]),
+    ("c04", "phone", ["raw/ios-c04"]), ("c05", "phone", ["raw/ios-c05"]), ("c06", "phone", ["raw/ios-c06"]),
+    ("c07", "term", []), ("c08", "browser", ["raw/ios-c08-explorer"]),
 ]
 
 

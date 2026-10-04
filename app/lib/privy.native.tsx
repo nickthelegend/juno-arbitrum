@@ -26,7 +26,7 @@ import type { PrivyBridge, TxRequest } from "./privy.types";
 
 export const APP_ID = process.env.EXPO_PUBLIC_PRIVY_APP_ID ?? "cmuh8o5on014v0cjmdk6w1l0q";
 export const CLIENT_ID =
-  process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID ?? "client-WY6dy4WiB1bozhetK8yhaZh1mu4kQNUhF8a8SmV7xoJWN";
+  process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID ?? "client-WY6dy4WiB1bozhetK8yhaZh1mu4kQNUhF8Zxk7ZGf71Mp";
 
 export const PRIVY_ENABLED = true;
 
